@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from sqlalchemy.orm import Session
 
 from bhumi.config.settings import get_settings
+from bhumi.knowledge.ledger import publish_fact
 from bhumi.storage.db.engine import make_engine
 from bhumi.storage.db.models import CandidateFactRow, DocumentAst
 
@@ -71,6 +72,8 @@ with left:
             r.state = "published"
             r.approver = "reviewer_demo"
             session.commit()
+            if r.entity_id and r.value is not None:  # categorical/unresolved-entity facts aren't ledger-eligible yet
+                publish_fact(session, r, approver="reviewer_demo")
         st.rerun()
     if c2.button("Soft-reject", disabled=row.state == "soft_rejected"):
         with Session(engine) as session:

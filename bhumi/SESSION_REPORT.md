@@ -169,3 +169,180 @@ have stayed rejected. Both are in PROVENANCE.md with the fix.
 - Nothing else in the prompt's specific technical claims (spanning-header
   risk, Alembic revisit trigger, confidence-model separation) turned out
   to be wrong — all were confirmed correct by this session's findings.
+
+---
+
+# SESSION REPORT ADDENDUM — MVP-2.5 + MVP-3 + Model-Automation Addon (2026-09-06)
+
+**This addendum covers three prompts received in one session**: the MVP-2.5
+structural-debt + MVP-3 Phase-5 kickoff, and a large model-automation addon
+appended mid-turn. Given realistic time limits, scope was triaged; what
+follows states plainly what was built and verified versus explicitly
+deferred. No silent scope-cutting — everything below is a deliberate,
+stated choice.
+
+## §0 — Classification decision
+
+Recorded in `docs/CLASSIFICATION_DECISION.md`: the Marwatola GR is
+`restricted` because its own page 1 says so explicitly (a printed
+CIL/CMPDI internal-distribution banner) — not a coordinates/estimates
+judgment call. Public hosting (the NMET URL) and public classification are
+stated as two different judgments, and where they conflict the document's
+own stated classification wins. Enforced in code: `src/bhumi/export/
+guard.py::assert_exportable` raises `ExportBlocked` for any non-public
+document; tested (`tests/test_export_guard.py`). It isn't wired into an
+actual video/export pipeline yet because no such pipeline exists in this
+codebase to wire it into — it's ready for whenever one is built.
+
+**A second, unambiguously public document was acquired**: the NMET GR
+submission format spec (8 pages, scanned for restriction language —
+`restrict`/`confidential`/`strictly`/etc. all absent). Registered
+`--classification public`. Suitable for any demo content.
+
+## §1 — MVP-2.5 structural fixes, both genuinely diagnosed and fixed
+
+**Multi-row ranges**: diagnosed first (per the prompt's explicit
+instruction not to patch a misdiagnosed problem) — the continuation row
+was emitting *garbage* candidates (borehole-ID strings mistaken for metric
+values), not "safely degrading" as previously described. Fixed with a
+minimal row-group detector; borehole references are now captured as a
+`source_boreholes` qualifier rather than discarded. Net effect on the real
+document: 353 candidates → 189 (garbage removed), 0 soft-rejected (down
+from 180, after this fix plus a seam-regex widening for "IB" found along
+the way).
+
+**Multi-page continuation**: verified real (pages 15-17 share an identical
+header — direct comparison, not inference) and fixed for real
+(`read/continuation.py`), not left synthetic-only. Verified: re-ingesting
+those pages produces one 98-row table instead of three.
+
+Both fixes surfaced a genuine, separate bug: stale `candidate_fact` rows
+from before a code change weren't pruned. Fixed, with a safety rule —
+never prune a row a human has already decided (`published`/`rejected`).
+
+## §2 — Model-automation addon: what's real, what's scoped down
+
+**Built and verified for real:**
+- `config/models.yaml` + `scripts/fetch_models.py` — idempotent,
+  profile-aware, CUDA-gated, respects an explicit `BHUMI_SKIP_MODELS`
+  override. 5 tests, network layer fully mocked.
+- Profile auto-detection (`resolve_profile_with_reason`) — CUDA presence →
+  workstation, else Postgres URL → supabase, else sqlite. Reasoning
+  printed by `task profile`, never a silent guess.
+- Tier 3 (PaddleOCR-VL): a real implementation, not a stub — gated by a
+  real capability check (llama-cpp-python importable, CUDA present,
+  weights on disk), using `model_slot()` like Tier 2. Its llama.cpp
+  multimodal call shape is **written but unverified by execution** — no
+  GPU exists on this machine to run it. Said plainly in the module
+  docstring, not glossed over. `@pytest.mark.requires_gpu` tests exist and
+  auto-skip without CUDA (verified: 1 skipped, reported by pytest).
+
+**A real environment finding changed the plan mid-session**:
+`huggingface.co` is blocked at the network/proxy level on this machine —
+confirmed via a raw HTTP request returning 403 on the bare domain, not an
+app-level error. This means embeddings and the entailment checker, while
+genuinely CPU-viable per the addon's own claim, **could not actually be
+fetched here** regardless of the entailment-checker exclusion I was
+separately instructed to honor. Added `probe_huggingface_reachable` so
+`doctor` reports this honestly instead of a generic import-based
+"unverified." Along the way, fixed an unrelated, legitimately-fixable SSL
+issue (Python's bundled cert store missing this network's CA chain, unlike
+`curl`/schannel) via `pip-system-certs` in the venv only — not a project
+dependency, not a security workaround, just pointing Python at the same
+OS trust store `curl` already uses.
+
+**Explicitly NOT downloaded on this machine, per direct instruction**: the
+MiniCheck-Flan-T5-Large entailment checker (~3GB). The fetch code path is
+real and profile-gated; it was never invoked here regardless of the
+network block above.
+
+**Deferred, not attempted this session**: the full `serve` self-healing
+sequence rewrite (doctor → migrate → fetch_models → resource-budget check
+→ UI, all as one step-by-step orchestrated flow with progress printing)
+and the resource-budget admission check (`config/resources.yaml` +
+`runtime/resources.py`) from the base architecture prompt's §7. `task
+serve` still works (doctor + migrate + UI start) but does not yet call
+`fetch_models.py` or a budget check automatically. This is real,
+unfinished work, not something disguised as done.
+
+## §3 — Phase 5, scoped down from the full ask
+
+**Built and verified for real, against genuine extracted data (not hand-
+built fixtures alone):**
+- Fact Ledger (`knowledge/ledger.py`): bitemporal publish, `current_facts`,
+  and `as_of` — tested with an actual publish → revise → as-of-before
+  sequence that reproduces the exact original value (`tests/
+  test_fact_ledger.py`, 3 tests). `fact_identity` proven stable across
+  qualifier key ordering.
+- Knowledge graph (`knowledge/graph.py`), SQL-adjacency (no AGE, as
+  scoped): three graphs distinguished by a `graph` column —
+  administrative (hand-seeded from `source_registry`, `authoritative`),
+  geological (built from Assay candidates, `validated`), documentary
+  (document→block, document→fact). `derived` trust layer deliberately not
+  populated — nothing manufactured just to have a third tier.
+  - Real, measured graph size after rebuilding against the real 254-page
+    GR (pages 14-19 ingested): 971 `INTERSECTS` edges, 189 seam-candidate
+    occurrences (the counter counts candidate rows, not unique seam
+    nodes — noted here rather than silently presented as a unique count).
+  - The multi-hop query that justifies the graph (design doc §2.3): "which
+    boreholes intersect which seams, and what block are they in" —
+    **actually run against the real graph**, returned real paths, e.g.
+    `['borehole:CSM I&II-04', 'seam:IV', 'block:GR-MARWATOLA-I-II-G2']`.
+  - Graph invariant tests (no orphan seam, every `INTERSECTS` edge carries
+    its source metric, rebuild is idempotent) pass — 6 tests, run against
+    the real pipeline end to end, not a hand-built graph fixture.
+  - Traversal is a plain Python BFS over the adjacency table, not a
+    literal SQL recursive CTE. Functionally equivalent at this graph's
+    size; noted as a simplification to revisit if graph size ever makes
+    an in-DB traversal necessary.
+  - **A real structural bug was caught by this test suite, not assumed
+    away**: the two domain-pack table types disagree about which role is
+    the seam vs. the borehole. The graph builder originally assumed one
+    shape universally and silently produced zero graph edges on the
+    synthetic sample until `test_no_intersects_edge_lacks_a_supporting_
+    reference` failed and forced the diagnosis.
+- Graph Explorer UI (`ui/pages/4_graph_explorer.py`): pick a node, see its
+  neighbourhood coloured by trust layer, drill through a supporting-fact
+  edge to the source cell. Reuses Document Explorer's raster+bbox pattern.
+  Smoke-tested live (5-page Streamlit app, all HTTP 200, no exceptions in
+  server logs).
+
+**Explicitly NOT built this session, given time — a scope decision, not an
+oversight:**
+- Passage index / contextual chunking / hybrid retrieval (FTS5 + vector +
+  RRF) and the retrieval-ablation evaluation harness. The `VectorIndex`/
+  `TextIndex` interfaces from MVP-0 remain interface-only. This is the
+  single largest deferred item from the original Phase-5 ask.
+- Classification-aware retrieval test (the seeded restricted/public case)
+  — depends on the retrieval layer above not existing yet.
+- Backward lineage traversal (`lineage_edge` table + PROV-O-style backward
+  query) — not implemented. MVP-1/2's drill-down already reaches from a
+  candidate/fact to its source cell directly; a dedicated lineage table
+  adding claim/chunk-level indirection was not built.
+- Resource-budget admission check and the full `serve` sequence rewrite
+  (see §2 above).
+
+## Numbers that must NOT be quoted from this machine
+
+- Everything already listed in the original SESSION_REPORT.md still
+  applies (no GPU/Tier-3/Docling figures from this machine).
+- The real graph's 971/189 counts are from a **6-page slice** (pages
+  14-19) of a 254-page document, not the whole report — do not present
+  this as "the graph of the Marwatola GR," only as this session's ingested
+  subset of it.
+- No retrieval quality numbers exist yet at all (Recall@k, ablation) — the
+  retrieval layer wasn't built this session; nothing should be quoted
+  because nothing was measured.
+
+## Anything that turned out wrong or needed correction mid-session
+
+- My own graph-builder assumption ("entity_id is always the seam") was
+  wrong the moment it met the synthetic sample's table type — caught by
+  the test suite I wrote for it, not by inspection beforehand.
+- The addon's assumption that embeddings/entailment are "genuinely
+  CPU-viable and installable here" was right about capability and wrong
+  about reachability — this network blocks huggingface.co entirely,
+  independent of CPU/GPU capability.
+- My first `as_of` bitemporal test had a timing bug (added a +50ms offset
+  that overshot into the next revision's validity window) — a test bug,
+  not a ledger bug; fixed and re-verified.

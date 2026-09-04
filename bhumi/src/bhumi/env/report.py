@@ -40,7 +40,20 @@ def render_report(caps: list[Capability], settings: Settings) -> str:
                 "",
             ]
 
+    lines += ["", "## Model availability", "| Model | Installable here | Runnable here | Weights fetched | Verified by |", "|---|---|---|---|---|"]
+    hf_ok = next((c for c in caps if c.name == "huggingface_reachable"), None)
+    hf_note = "yes" if hf_ok and hf_ok.status == CapabilityStatus.OK else "**no — huggingface.co blocked at network/proxy level (HTTP 403 on bare domain, confirmed 2026-09-06)**"
     lines += [
+        f"| bge-small-en-v1.5 (embeddings) | yes | yes (CPU) | {hf_note} | not run — network blocked; code path real, see scripts/fetch_models.py |",
+        "| MiniCheck-Flan-T5-Large (entailment) | yes | yes (CPU) | **deliberately not fetched — explicit instruction this session, not a capability gap** | n/a |",
+        "| Docling layout+TableFormer (CPU) | yes | not run this session | n/a | Tier 1 (PyMuPDF) covered the real document end to end; Docling was never invoked |",
+        "| Docling (GPU) | yes | no — no CUDA | n/a | skipped, requires workstation |",
+        "| PaddleOCR-VL (Tier 3) | yes (real code written, gated) | no — no CUDA | no — skipped by profile | code path exists and is capability-gated; run `pytest -m requires_gpu` on the workstation |",
+        "| Local narrative LLM (Qwen2.5-3B) | yes (CPU wheel path) | not run | no — workstation profile only | not attempted this session |",
+    ]
+
+    lines += [
+        "",
         "## Recommended profile for this machine",
         f"`{settings.profile.value}` — matches measured capabilities above.",
     ]

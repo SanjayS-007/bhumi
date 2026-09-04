@@ -197,6 +197,7 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "huggingface-hub" },
     { name = "pillow" },
     { name = "psutil" },
     { name = "pydantic" },
@@ -245,6 +246,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "docling", marker = "extra == 'read'", specifier = ">=2.0" },
     { name = "docling-core", marker = "extra == 'read'", specifier = ">=2.0" },
+    { name = "huggingface-hub", specifier = ">=0.24" },
     { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "paddleocr", marker = "extra == 'ocr'" },

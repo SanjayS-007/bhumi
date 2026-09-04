@@ -122,6 +122,65 @@ class AssayRun(Base):
     gate_failure_counts: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class Fact(Base):
+    """Bitemporal, append-only Fact Ledger (design doc Phase 5.1). A fact
+    is never updated in place — a revision closes the old row
+    (system_to = now) and inserts a new one; `fact_identity` is what ties
+    revisions of "the same fact" together across that history."""
+
+    __tablename__ = "fact"
+
+    fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    fact_identity: Mapped[str] = mapped_column(String, index=True)
+    entity_id: Mapped[str] = mapped_column(String, index=True)
+    metric_key: Mapped[str] = mapped_column(String, index=True)
+    qualifiers: Mapped[dict] = mapped_column(JSON, default=dict)
+    value_kind: Mapped[str] = mapped_column(String, default="point")
+    value: Mapped[object] = mapped_column(DecimalString)
+    unit: Mapped[str] = mapped_column(String)
+    period: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)
+
+    valid_from: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    valid_to: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    system_from: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    system_to: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    supersedes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    source: Mapped[dict] = mapped_column(JSON)
+    candidate_id: Mapped[str] = mapped_column(String)
+    approver: Mapped[str | None] = mapped_column(String, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float)
+
+
+class GraphNode(Base):
+    """SQL-adjacency graph (design doc Phase 5.3) — the sqlite/workstation
+    profile's graph backend per storage/interfaces.py::GraphStore; no
+    Apache AGE needed to be real at this scope."""
+
+    __tablename__ = "graph_node"
+
+    node_id: Mapped[str] = mapped_column(String, primary_key=True)
+    label: Mapped[str] = mapped_column(String, index=True)  # Coalfield|Block|Seam|Borehole|Document|Subsidiary...
+    graph: Mapped[str] = mapped_column(String, index=True)  # administrative|geological|documentary
+    props: Mapped[dict] = mapped_column(JSON, default=dict)
+    doc_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+
+class GraphEdge(Base):
+    __tablename__ = "graph_edge"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    src: Mapped[str] = mapped_column(String, index=True)
+    dst: Mapped[str] = mapped_column(String, index=True)
+    rel: Mapped[str] = mapped_column(String, index=True)
+    trust_layer: Mapped[str] = mapped_column(String, default="validated")  # authoritative|validated|derived
+    props: Mapped[dict] = mapped_column(JSON, default=dict)
+    fact_id: Mapped[str | None] = mapped_column(String, nullable=True)  # supporting fact, if any
+    domain_pack_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    doc_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+
 class ReviewQueueItem(Base):
     __tablename__ = "review_queue"
 

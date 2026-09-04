@@ -87,9 +87,23 @@ Build machine is a **locked-down Windows laptop**, verified 2026-09-04:
 11. `ui/`: corpus page → document explorer (drill-down demo) → read trace
 12. CI (Windows + sqlite profile at minimum) + keep README/PROVENANCE current
 
-Current status: **MVP-0, MVP-1 and MVP-2 (Phase 3 domain typing + Phase 4
-Assay) complete and verified on this machine** (steps 1–9 of the build
-order fully; step 12/CI not started). Concretely:
+Current status (2026-09-06): **MVP-0 through a scoped MVP-3 are built and
+verified.** Beyond the MVP-2 state below: both structural gaps (multi-row
+seam ranges, multi-page table continuation) are diagnosed and genuinely
+fixed against real data; classification is decided and enforced in code
+(`export/guard.py`); a bitemporal Fact Ledger and a real SQL-adjacency
+knowledge graph (3 trust-differentiated graphs, one real multi-hop query
+verified) exist with a Graph Explorer UI page (5 pages total now); profile
+auto-detection and a real (GPU-gated, unexecuted) Tier 3 implementation
+exist. **NOT built**: passage/vector retrieval, contextual chunking, the
+retrieval ablation harness, backward lineage traversal, the full `serve`
+self-healing sequence, resource-budget admission check — all explicitly
+deferred, not silently skipped. Full detail: `SESSION_REPORT.md`'s
+MVP-2.5/3 addendum, `docs/CLASSIFICATION_DECISION.md`, `PROVENANCE.md`'s
+2026-09-06 entries. 47 tests pass (1 GPU test correctly auto-skipped).
+
+Prior status (MVP-0/1/2, steps 1–9 of the build order, step 12/CI not
+started):
 - `task doctor --strict`, `task profile`, `task migrate` (now real Alembic,
   see below), `task acquire`, `task ingest -- --sample`, `task ingest
   --doc-id <id> --pages "N-M"`, `task assay run/explain/reeval`, `task

@@ -1,0 +1,43 @@
+# Model registry consumed by scripts/fetch_models.py. Every model this
+# system can use, declared once — which profile needs it, whether it needs
+# CUDA, where its weights live under data/models/.
+models:
+  embeddings_bge_small:
+    profile_required: any
+    requires_cuda: false
+    source: "BAAI/bge-small-en-v1.5"
+    target_dir: data/models/embeddings_bge_small
+    expected_files: ["config.json"]
+
+  entailment_minicheck:
+    profile_required: any
+    requires_cuda: false
+    source: "lytang/MiniCheck-Flan-T5-Large"
+    target_dir: data/models/entailment_minicheck
+    expected_files: ["config.json"]
+    # 2026-09-06: genuinely CPU-viable per the design doc, but deliberately
+    # NOT fetched on this build laptop — explicit user instruction this
+    # session, not a capability limitation. See PROVENANCE.md. fetch_models.py
+    # honors BHUMI_SKIP_MODELS to enforce this without deleting the entry
+    # a workstation clone needs.
+
+  narrative_llm_qwen25_3b:
+    profile_required: workstation
+    requires_cuda: false  # CPU wheel fallback exists, but this is GPU-scale in practice
+    source: "Qwen/Qwen2.5-3B-Instruct-GGUF"
+    target_dir: data/models/narrative_llm_qwen25_3b
+    expected_files: ["*.gguf"]
+
+  docling_layout_tableformer:
+    profile_required: any
+    requires_cuda: false  # auto-fetched by the `docling` package itself, not by this script
+    source: "docling-project/docling-models"
+    target_dir: data/models/docling
+    expected_files: []
+
+  paddleocr_vl:
+    profile_required: workstation
+    requires_cuda: true
+    source: "PaddlePaddle/PaddleOCR-VL"  # GGUF asset location: verify at fetch time (llama.cpp release assets move)
+    target_dir: data/models/paddleocr_vl
+    expected_files: ["*.gguf"]

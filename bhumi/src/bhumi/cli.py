@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table as RichTable
 from sqlalchemy.orm import Session
 
-from bhumi.config.settings import get_settings
+from bhumi.config.settings import get_settings, resolve_profile_with_reason
 from bhumi.env.report import write_report
 from bhumi.runtime.logging import configure_logging
 from bhumi.storage.db.engine import migrate as db_migrate
@@ -41,8 +41,9 @@ def migrate():
 def profile():
     """Show active profile and resolved backends."""
     settings = get_settings()
+    _, reason = resolve_profile_with_reason()
     t = RichTable(show_header=False)
-    t.add_row("profile", settings.profile.value)
+    t.add_row("profile", f"{settings.profile.value}  ({reason})")
     t.add_row("relational", f"sqlite  {settings.sqlite_path}" if settings.profile.value == "sqlite" else "postgres")
     t.add_row("vector", f"{settings.vector_backend} (not implemented until Phase 5)")
     t.add_row("text search", f"{settings.text_backend} (not implemented until Phase 5)")
@@ -188,6 +189,22 @@ def assay_reeval_cmd(
         f"  {result['recovered']} now pass -> pending_review or auto_passed\n"
         f"  {result['unchanged']} still soft_rejected"
     )
+
+
+graph_app = typer.Typer(add_completion=False)
+app.add_typer(graph_app, name="graph")
+
+
+@graph_app.command("rebuild")
+def graph_rebuild(doc_id: str = typer.Option(..., "--doc-id")):
+    """Deterministically rebuild the knowledge graph for one document."""
+    from bhumi.knowledge.graph import rebuild_graph_for_doc
+
+    settings = get_settings()
+    engine = db_migrate(settings)
+    with Session(engine) as session:
+        counts = rebuild_graph_for_doc(session, doc_id)
+    console.print(f"[green]graph rebuilt[/green] {counts}")
 
 
 @app.command()

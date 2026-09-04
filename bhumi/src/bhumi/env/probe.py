@@ -200,6 +200,35 @@ def probe_network(offline: bool) -> Capability:
         return Capability("network", CapabilityStatus.UNAVAILABLE, str(e), "acquire from URL will fail; use --offline")
 
 
+def probe_huggingface_reachable(offline: bool) -> Capability:
+    """huggingface.co is blocked at the network/proxy level on this
+    machine — confirmed via raw HTTP request, HTTP 403 on the bare domain,
+    not an app-level auth issue (verified 2026-09-06). This means
+    embeddings/entailment models are CPU-viable in principle but their
+    weights cannot actually be fetched here — a network policy, not a
+    capability gap. scripts/fetch_models.py will correctly report
+    'failed', not silently succeed."""
+    if offline:
+        return Capability("huggingface_reachable", CapabilityStatus.UNVERIFIED, "--offline requested, probe skipped", "n/a")
+    try:
+        import urllib.request
+
+        req = urllib.request.Request("https://huggingface.co", method="HEAD")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            code = resp.status
+    except Exception as e:
+        return Capability(
+            "huggingface_reachable", CapabilityStatus.UNAVAILABLE, f"request failed: {e}",
+            "model weight downloads (embeddings, entailment) will fail",
+        )
+    if code == 200:
+        return Capability("huggingface_reachable", CapabilityStatus.OK, "HTTP 200", "model weight downloads should work")
+    return Capability(
+        "huggingface_reachable", CapabilityStatus.UNAVAILABLE, f"HTTP {code} on bare domain — network/proxy block, not an app error",
+        "embeddings/entailment weights cannot be fetched on this network; try on the workstation or a different network",
+    )
+
+
 def probe_uv_project_environment() -> Capability:
     """A stray global UV_PROJECT_ENVIRONMENT pointing at an unrelated
     project silently redirects `uv venv`/`uv sync` — found and worked
@@ -261,4 +290,5 @@ def run_all_probes(offline: bool = False) -> list[Capability]:
         probe_pymupdf(),
         probe_docling(),
         probe_network(offline),
+        probe_huggingface_reachable(offline),
     ]

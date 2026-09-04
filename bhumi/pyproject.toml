@@ -19,6 +19,7 @@ dependencies = [
   "pillow>=10.3",
   "taskipy>=1.13",
   "pyyaml>=6.0",
+  "huggingface-hub>=0.24",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +64,7 @@ ignore = ["E501", "E741"]
 # fails there. Route basetemp inside the repo instead. Revisit if this repo
 # ever needs a completely clean checkout-only tree (e.g. read-only CI mount).
 addopts = "--basetemp=.pytest_tmp"
+markers = ["requires_gpu: needs a real CUDA device (auto-skipped without one, see tests/conftest.py)"]
 
 [build-system]
 requires = ["hatchling"]
