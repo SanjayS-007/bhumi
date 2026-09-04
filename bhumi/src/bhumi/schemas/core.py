@@ -73,6 +73,10 @@ class CandidateFact(BaseModel):
     unit: Optional[str] = None
     unit_source: Optional[str] = None
     qualifiers: dict[str, str] = {}
+    # A real Min/Max range table (docs/REAL_DOC_FINDINGS.md #9) reports two
+    # statistics per metric via separate columns, not two data rows — this
+    # is what that column distinction becomes on the candidate.
+    value_kind: Literal["point", "min", "max"] = "point"
     period: Optional[str] = None
     status: Optional[Literal["final", "provisional", "draft"]] = None
     source: SourceRef

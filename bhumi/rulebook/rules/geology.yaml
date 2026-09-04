@@ -1,7 +1,7 @@
 # Domain validation rules as data (design doc M4.2). A ~150-line
 # interpreter in assay/rule_engine.py evaluates these — deliberately not a
 # generic expression language (no eval()), just two rule shapes: range
-# and pair. match_on uses `qualifiers.stat` (min/max) so a real GR's
+# and pair. match_on uses `value_kind` (min/max) so a real GR's
 # Min-thickness is compared against Min-thickness, not against Max — see
 # docs/REAL_DOC_FINDINGS.md #9.
 rules:
@@ -27,7 +27,7 @@ rules:
     metric_a: seam_thickness_net
     metric_b: seam_thickness_gross
     relation: le
-    match_on: [entity_id, qualifiers.stat]
+    match_on: [entity_id, value_kind]
     severity: block
     message: "Net/effective thickness {a_value} exceeds gross/seam thickness {b_value} for {entity_id} — physically impossible, likely an OCR digit error"
     rationale: >
@@ -41,7 +41,7 @@ rules:
     metric_a: coal_ash_pct
     metric_b: coal_gcv
     relation: high_ash_high_gcv_implausible
-    match_on: [entity_id, qualifiers.stat]
+    match_on: [entity_id, value_kind]
     severity: warn
     message: "High ash ({a_value}%) with high GCV ({b_value} kcal/kg) is geologically unusual — verify"
     rationale: >

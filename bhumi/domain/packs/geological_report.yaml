@@ -16,11 +16,13 @@
 #     `task ingest -- --sample` keeps demonstrating candidate emission;
 #     do not point to this type as evidence the pack works on real data.
 pack: geological_report
-version: 3
+version: 4
 # v3 (2026-09-05): widened the borehole regex separator class to accept
 # "." as well as "-"/space, after "SKM.18" was found soft-rejecting at G2
 # for want of a matched entity. See PROVENANCE.md and the assay reeval
 # demo it enables.
+# v4 (2026-09-06): widened the seam regex to accept any trailing letter
+# (not just "A") after "IB" was found soft-rejecting on the real GR.
 applies_to:
   doc_kinds: [geological_report, sample]
 
@@ -131,5 +133,8 @@ entity_patterns:
     # from the design doc's "Seam <roman> <position>" phrasing, which
     # doesn't literally occur (no "Seam" prefix word in this table's own
     # values; the column header supplies that context instead).
-    regex: '\b([IVXL]+A?)\s*(Top|Middle|Bottom|Combined)?\b'
+    # widened 2026-09-06: "IB" was found soft-rejecting (only trailing "A"
+    # was anticipated, e.g. "IIIA") — any single trailing letter is a real
+    # sub-seam suffix in this document.
+    regex: '\b([IVXL]+[A-Z]?)\s*(Top|Middle|Bottom|Combined)?\b'
     normalise: "{roman} {position}"

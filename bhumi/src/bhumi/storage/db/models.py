@@ -91,6 +91,7 @@ class CandidateFactRow(Base):
     unit: Mapped[str | None] = mapped_column(String, nullable=True)
     unit_source: Mapped[str | None] = mapped_column(String, nullable=True)
     qualifiers: Mapped[dict] = mapped_column(JSON, default=dict)
+    value_kind: Mapped[str] = mapped_column(String, default="point")
     period: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
     source: Mapped[dict] = mapped_column(JSON)

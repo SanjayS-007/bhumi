@@ -103,6 +103,9 @@ def run_read_pipeline(
 
     doc.close()
 
+    from bhumi.read.continuation import merge_continued_tables
+    ast.tables = merge_continued_tables(ast.tables)
+
     ast_dir = settings.data_dir / "ast"
     ast_dir.mkdir(parents=True, exist_ok=True)
     ast_path = ast_dir / f"{doc_id}.json"

@@ -10,11 +10,15 @@ import structlog
 import yaml
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select
+
 from bhumi.assay.gates import run_gates
 from bhumi.assay.rule_engine import evaluate_pair_rules, evaluate_range_rules, load_rules
 from bhumi.domain.pack import DomainPack
 from bhumi.domain.pipeline import type_document
 from bhumi.storage.db.models import AssayRun, CandidateFactRow
+
+HUMAN_DECIDED_STATES = {"published", "rejected"}
 
 log = structlog.get_logger()
 
@@ -29,6 +33,19 @@ def load_known_metric_keys() -> set[str]:
 def run_assay(session: Session, doc_id: str, artifact_id: str, ast_path: str, pack: DomainPack) -> dict:
     ast = json.loads(Path(ast_path).read_text(encoding="utf-8"))
     candidates = type_document(ast, doc_id, artifact_id, pack)
+
+    # Prune rows this run no longer emits (e.g. a code/pack change means a
+    # (row,col) position is no longer a candidate at all — the continuation
+    # row fix in domain/emit.py is exactly this case, and it left 180 dead
+    # rows behind before this fix, PROVENANCE.md 2026-09-06). Never touch a
+    # human's decision (published/rejected) even if it's now "orphaned" —
+    # only auto-generated states are safe to prune.
+    current_ids = {c.candidate_id for c in candidates}
+    existing = session.execute(select(CandidateFactRow).where(CandidateFactRow.doc_id == doc_id)).scalars().all()
+    for row in existing:
+        if row.candidate_id not in current_ids and row.state not in HUMAN_DECIDED_STATES:
+            session.delete(row)
+    session.flush()
 
     rules = load_rules(REPO_ROOT / "rulebook" / "rules" / "geology.yaml")
     range_findings = evaluate_range_rules(candidates, rules)
@@ -61,6 +78,7 @@ def run_assay(session: Session, doc_id: str, artifact_id: str, ast_path: str, pa
         row.unit = c.unit
         row.unit_source = c.unit_source
         row.qualifiers = c.qualifiers
+        row.value_kind = c.value_kind
         row.period = c.period
         row.status = c.status
         row.source = c.source.model_dump()

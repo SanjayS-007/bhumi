@@ -1,6 +1,16 @@
 """Candidate-fact emitter (design doc M3.6): table + domain type + column
 mapping -> CandidateFact[], each carrying its SourceRef with the exact cell
-bbox."""
+bbox.
+
+Row groups (docs/REAL_DOC_FINDINGS.md #9, diagnosed 2026-09-06): a real
+seam's values row is sometimes followed by a borehole-reference row whose
+identity columns are blank. Before this fix, that continuation row was
+treated as an independent data row — its metric-column cells (which hold
+borehole ID *strings*, not measurements) became spurious candidates that
+only happened to soft-reject because the entity column was blank. Now:
+detected via the `blank_continuation` signal and merged into the owning
+row's `source_boreholes` qualifier instead of emitting garbage candidates.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -20,6 +30,24 @@ def _match_column(header_chain: list[str], table_type: TableTypeDef):
             if pat.lower() in text:
                 return col
     return None
+
+
+def _is_identity_column(col) -> bool:
+    return col is not None and col.role in ("entity", "qualifier")
+
+
+def _extract_borehole_refs(row: list[str], pack: DomainPack) -> list[str]:
+    pattern = pack.entity_patterns.get("borehole")
+    if not pattern:
+        return []
+    refs = []
+    for cell in row:
+        if not cell:
+            continue
+        resolved = resolve_entity("borehole", cell, pattern)
+        if resolved:
+            refs.append(resolved)
+    return refs
 
 
 def emit_candidates(
@@ -48,9 +76,33 @@ def emit_candidates(
         return resolve_headers(grid, header_row_count, c, cell_bboxes=bbox_grid, col_ranges=col_ranges)
 
     col_map = {c: (_match_column(_chain(c), table_type), _chain(c)) for c in range(n_cols)}
+    identity_cols = [c for c, (col, _) in col_map.items() if _is_identity_column(col)]
+
+    def _identity_blank(r: int) -> bool:
+        return identity_cols and all(not grid[r][c].strip() for c in identity_cols)
 
     candidates: list[CandidateFact] = []
+    row_group_boreholes: dict[int, list[str]] = {}  # owning row -> refs found in its continuation row(s)
+    owning_row: int | None = None
+
     for r in range(header_row_count, n_rows):
+        if not any(cell.strip() for cell in grid[r]):
+            continue  # fully blank spacer row
+        if _identity_blank(r) and owning_row is not None:
+            # blank_continuation signal: not a new record, a continuation
+            # of the previous one (design doc's RowGroup, minimal form).
+            refs = _extract_borehole_refs(grid[r], pack)
+            if refs:
+                row_group_boreholes.setdefault(owning_row, []).extend(refs)
+            continue
+        owning_row = r
+
+    for r in range(header_row_count, n_rows):
+        if _identity_blank(r):
+            continue  # continuation row — already folded into its owner above, emits nothing itself
+        if not any(cell.strip() for cell in grid[r]):
+            continue
+
         entity_raw_text: str = ""
         entity_val: str | None = None
         qualifiers: dict[str, str] = {}
@@ -74,6 +126,10 @@ def emit_candidates(
                     resolve_entity(col.qualifier_key, raw, pattern) if pattern else raw
                 )
 
+        source_boreholes = row_group_boreholes.get(r)
+        if source_boreholes:
+            qualifiers["source_boreholes"] = ";".join(sorted(set(source_boreholes)))
+
         for c in range(n_cols):
             col, chain = col_map[c]
             if col is None or col.role != "metric":
@@ -83,9 +139,9 @@ def emit_candidates(
                 continue
             cell = cell_by_rc[(r, c)]
             unit, unit_source = resolve_unit(col, chain)
-            cell_qualifiers = dict(qualifiers)
+            value_kind = "point"
             if col.stat_from_header and chain and chain[-1].lower() in ("min", "max"):
-                cell_qualifiers["stat"] = chain[-1].lower()
+                value_kind = chain[-1].lower()
             value = None
             if col.value_type == "decimal":
                 try:
@@ -106,7 +162,8 @@ def emit_candidates(
                     value=value,
                     unit=unit,
                     unit_source=unit_source,
-                    qualifiers=cell_qualifiers,
+                    qualifiers=qualifiers,
+                    value_kind=value_kind,
                     period=period,
                     status="final",
                     source=SourceRef(

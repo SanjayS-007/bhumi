@@ -38,6 +38,7 @@ def _row_to_fact(row: CandidateFactRow, pack: DomainPack) -> CandidateFact:
         candidate_id=row.candidate_id, entity_raw=row.entity_raw, entity_id=entity_id,
         metric_raw=row.metric_raw, metric_key=row.metric_key, value_raw=row.value_raw,
         value=row.value, unit=row.unit, unit_source=row.unit_source, qualifiers=row.qualifiers or {},
+        value_kind=row.value_kind,
         period=row.period, status=row.status, source=SourceRef(**row.source),
         extraction_confidence=row.extraction_confidence, domain_type=row.domain_type,
         domain_pack_version=pack.version,
