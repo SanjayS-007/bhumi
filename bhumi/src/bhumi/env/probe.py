@@ -3,10 +3,12 @@ See CLAUDE.md rule 3 — never claim untested capability.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -198,10 +200,54 @@ def probe_network(offline: bool) -> Capability:
         return Capability("network", CapabilityStatus.UNAVAILABLE, str(e), "acquire from URL will fail; use --offline")
 
 
+def probe_uv_project_environment() -> Capability:
+    """A stray global UV_PROJECT_ENVIRONMENT pointing at an unrelated
+    project silently redirects `uv venv`/`uv sync` — found and worked
+    around 2026-09-04 (PROVENANCE.md). Encode the check, don't just
+    document it."""
+    val = os.environ.get("UV_PROJECT_ENVIRONMENT")
+    repo_root = Path(__file__).resolve().parents[3]
+    if not val:
+        return Capability("uv_project_environment", CapabilityStatus.OK, "not set", "uv defaults to .venv inside the repo")
+    try:
+        inside_repo = repo_root in Path(val).resolve().parents or Path(val).resolve() == repo_root
+    except OSError:
+        inside_repo = False
+    if inside_repo:
+        return Capability("uv_project_environment", CapabilityStatus.OK, f"set to {val} (inside this repo)", "fine")
+    return Capability(
+        "uv_project_environment", CapabilityStatus.DEGRADED, f"set to {val} — NOT inside this repo ({repo_root})",
+        "uv venv/uv sync will silently target the wrong project's virtualenv",
+        remediation=f'unset UV_PROJECT_ENVIRONMENT (or set it to "{repo_root / ".venv"}") before running uv commands here',
+    )
+
+
+def probe_pytest_basetemp_writable() -> Capability:
+    """pyproject.toml pins --basetemp=.pytest_tmp because this machine's
+    default %TEMP%\\pytest-of-<user> was found unwritable (PROVENANCE.md).
+    Verify that workaround is still valid rather than assuming it forever."""
+    repo_root = Path(__file__).resolve().parents[3]
+    basetemp = repo_root / ".pytest_tmp"
+    try:
+        basetemp.mkdir(parents=True, exist_ok=True)
+        probe_file = basetemp / ".write_probe"
+        probe_file.write_text("x")
+        probe_file.unlink()
+        return Capability("pytest_basetemp", CapabilityStatus.OK, f"{basetemp} is writable", "task test / task verify will run")
+    except OSError as e:
+        default_temp = Path(tempfile.gettempdir())
+        return Capability(
+            "pytest_basetemp", CapabilityStatus.UNAVAILABLE, f"{basetemp} not writable: {e}",
+            "task test / task verify will fail with a confusing PermissionError",
+            remediation=f"pick a writable --basetemp in pyproject.toml's [tool.pytest.ini_options] (default temp dir was {default_temp})",
+        )
+
+
 def run_all_probes(offline: bool = False) -> list[Capability]:
     return [
         probe_python_runtime(),
         probe_uv(),
+        probe_uv_project_environment(),
         probe_admin_rights(),
         probe_docker(),
         probe_long_paths(),
@@ -211,6 +257,7 @@ def run_all_probes(offline: bool = False) -> list[Capability]:
         probe_cuda_torch(),
         probe_sqlite_version(),
         probe_sqlite_fts5(),
+        probe_pytest_basetemp_writable(),
         probe_pymupdf(),
         probe_docling(),
         probe_network(offline),

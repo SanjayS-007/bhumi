@@ -9,6 +9,17 @@ function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red }
 Write-Host "PowerShell $($PSVersionTable.PSVersion)"
 if ($PSVersionTable.PSVersion.Major -lt 5) { Warn "PowerShell < 5.1 — untested" } else { Ok "PowerShell version fine" }
 
+# A stray global UV_PROJECT_ENVIRONMENT silently redirects uv venv/uv sync
+# to an unrelated project's virtualenv (found 2026-09-04, PROVENANCE.md).
+# Never modify that other project's venv — just warn loudly and stop.
+$repoRoot = (Get-Location).Path
+if ($env:UV_PROJECT_ENVIRONMENT -and -not ($env:UV_PROJECT_ENVIRONMENT).StartsWith($repoRoot)) {
+    Fail "UV_PROJECT_ENVIRONMENT is set to '$($env:UV_PROJECT_ENVIRONMENT)', outside this repo ($repoRoot)."
+    Write-Host "  Fix: `$env:UV_PROJECT_ENVIRONMENT = `$null   (for this session), then re-run bootstrap." -ForegroundColor Yellow
+    exit 1
+}
+Ok "UV_PROJECT_ENVIRONMENT not pointing outside this repo"
+
 $uv = Get-Command uv -ErrorAction SilentlyContinue
 if (-not $uv) {
     Warn "uv not found on PATH — installing to user scope"

@@ -29,8 +29,14 @@ def classify_page(page, page_no: int) -> PageProfile:
     aspect_anomaly = aspect > 2.0 or aspect < 0.35
 
     is_scanned = not has_text_layer and image_count > 0
+    # quality_score drives TIER ROUTING ONLY (is this page legible at all?).
+    # It must NOT be a function of prose density — a table-dense page with
+    # little flowing text is not less legible than a prose-heavy one. That
+    # conflation was a real bug (see PROVENANCE.md 2026-09-05): it made a
+    # clean born-digital table score ~0.6 and land in the review queue for
+    # no real reason. text_coverage remains informational only.
     if has_text_layer:
-        quality_score = 0.6 + 0.4 * text_coverage
+        quality_score = 1.0
     elif is_scanned:
         quality_score = 0.2  # no OCR tier available on this profile — see router.py
     else:

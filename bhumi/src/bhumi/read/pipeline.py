@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from bhumi.config.settings import Settings
 from bhumi.read.classifier import classify_page
-from bhumi.read.confidence import element_confidence, table_grid_consistency
 from bhumi.read.router import route_page
 from bhumi.read.tiers import tier1_pymupdf
 from bhumi.schemas.ast import BhumiDocument, PageInfo, RouteDecision
@@ -22,7 +21,13 @@ from bhumi.storage.db.models import DocumentAst, PageRaster, ReadRun, ReviewQueu
 log = structlog.get_logger()
 
 
-def run_read_pipeline(session: Session, settings: Settings, doc_id: str, artifact_id: str, pdf_path: Path) -> BhumiDocument:
+def run_read_pipeline(
+    session: Session, settings: Settings, doc_id: str, artifact_id: str, pdf_path: Path,
+    page_range: tuple[int, int] | None = None,
+) -> BhumiDocument:
+    """`page_range` is 1-indexed and inclusive, e.g. (14, 19). Design doc's
+    recommended --limit flag for batch scripts — a 254-page real GR is not
+    something you want to raster in full on every investigative run."""
     import fitz
 
     started = time.monotonic()
@@ -30,9 +35,12 @@ def run_read_pipeline(session: Session, settings: Settings, doc_id: str, artifac
     ast = BhumiDocument(doc_id=doc_id, artifact_id=artifact_id, pages=[])
     raster_root = settings.data_dir / "rasters"
 
+    lo, hi = page_range if page_range else (1, doc.page_count)
     tier_counts: dict[str, int] = {}
     for page_no0, page in enumerate(doc):
         page_no = page_no0 + 1
+        if page_no < lo or page_no > hi:
+            continue
         profile = classify_page(page, page_no)
         route = route_page(profile)
         ast.routing.append(RouteDecision(page_no=page_no, tier=route.tier or 0, reason=route.reason))
@@ -77,12 +85,9 @@ def run_read_pipeline(session: Session, settings: Settings, doc_id: str, artifac
             )
             continue
 
-        conf = element_confidence(profile.quality_score, route.tier)
-        ast.texts += tier1_pymupdf.extract_text_elements(page, page_no, conf)
-        tables = tier1_pymupdf.extract_tables(page, page_no, conf)
+        ast.texts += tier1_pymupdf.extract_text_elements(page, page_no)
+        tables = tier1_pymupdf.extract_tables(page, page_no)
         for t in tables:
-            grid_conf = table_grid_consistency(t.num_rows, t.num_cols, len(t.cells))
-            t.confidence = element_confidence(profile.quality_score, route.tier, grid_conf)
             if t.confidence < settings.ocr_confidence_floor:
                 session.add(
                     ReviewQueueItem(

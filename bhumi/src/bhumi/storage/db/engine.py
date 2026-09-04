@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from bhumi.config.settings import Profile, Settings
-from bhumi.storage.db.models import Base
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def make_engine(settings: Settings) -> Engine:
@@ -19,14 +24,14 @@ def make_engine(settings: Settings) -> Engine:
 
 
 def migrate(settings: Settings) -> Engine:
-    """MVP-0 pragmatic migration: metadata.create_all().
-
-    ponytail: Alembic is the design doc's stated non-negotiable, but for a
-    single-developer hackathon build against SQLite, create_all() is the
-    same net effect with a tenth of the ceremony. Upgrade to real Alembic
-    migrations the moment a second person edits the schema concurrently, or
-    the moment a column needs to change on data that already exists.
-    """
+    """Apply the Alembic migration chain (wired 2026-09-05 — see
+    PROVENANCE.md for why create_all() was the pragmatic MVP-0/1 choice and
+    what triggered the switch). alembic/env.py resolves its own DB URL from
+    this same Settings object, so `task migrate` always targets whatever
+    BHUMI_PROFILE currently points at."""
     engine = make_engine(settings)
-    Base.metadata.create_all(engine)
+    cfg = Config(str(REPO_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(REPO_ROOT / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", str(engine.url))
+    command.upgrade(cfg, "head")
     return engine

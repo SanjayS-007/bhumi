@@ -42,6 +42,16 @@ def register_local_file(
     if existing:
         return existing
 
+    # doc_id is UNIQUE, not the primary key (artifact_id is) — re-running
+    # acquire against the same doc_id with changed content (a new sha256)
+    # must replace the old row, not violate the unique constraint. This is
+    # a real path in practice: iterating on scripts/make_sample_pdf.py
+    # regenerates the sample with a new hash every time.
+    by_doc_id = session.query(SourceRegistry).filter_by(doc_id=doc_id).one_or_none()
+    if by_doc_id and by_doc_id.artifact_id != sha256:
+        session.delete(by_doc_id)
+        session.flush()
+
     row = SourceRegistry(
         artifact_id=sha256,
         doc_id=doc_id,

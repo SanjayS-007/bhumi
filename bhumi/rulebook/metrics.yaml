@@ -1,0 +1,13 @@
+# Minimal metric registry for MVP-2's G3 metric-binding gate. Flat stand-in
+# for the full OKF markdown-with-frontmatter format (Phase 6) — deferred
+# until BEDROCK/Phase 6 actually needs the richer document format. See
+# PROVENANCE.md.
+metrics:
+  seam_thickness_gross: { canonical_unit: m, review_tier: geologist }
+  seam_thickness_net: { canonical_unit: m, review_tier: geologist }
+  coal_ash_pct: { canonical_unit: "%", review_tier: any }
+  coal_moisture_pct: { canonical_unit: "%", review_tier: any }
+  coal_vm_pct: { canonical_unit: "%", review_tier: any }
+  coal_fc_pct: { canonical_unit: "%", review_tier: any }
+  coal_gcv: { canonical_unit: kcal/kg, review_tier: any }
+  coal_grade_band: { canonical_unit: null, review_tier: any }

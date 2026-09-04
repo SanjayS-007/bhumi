@@ -59,7 +59,8 @@ class SourceRegistration(BaseModel):
 
 
 class CandidateFact(BaseModel):
-    """A number we think might be a fact. Not yet trusted. (Assay/Phase 4 — not used by MVP-1.)"""
+    """A number we think might be a fact. Not yet trusted. Emitted by Phase 3
+    (domain typing), gated by Phase 4 (Assay)."""
 
     candidate_id: str
     entity_raw: str
@@ -70,8 +71,11 @@ class CandidateFact(BaseModel):
     value: Optional[Decimal] = None
     unit_raw: Optional[str] = None
     unit: Optional[str] = None
+    unit_source: Optional[str] = None
+    qualifiers: dict[str, str] = {}
     period: Optional[str] = None
     status: Optional[Literal["final", "provisional", "draft"]] = None
     source: SourceRef
     extraction_confidence: float
     domain_type: Optional[str] = None
+    domain_pack_version: Optional[int] = None

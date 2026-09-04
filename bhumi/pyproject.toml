@@ -18,6 +18,7 @@ dependencies = [
   "streamlit>=1.37",
   "pillow>=10.3",
   "taskipy>=1.13",
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,7 @@ doctor  = { cmd = "python -m bhumi.cli doctor", help = "Probe environment, write
 migrate = { cmd = "python -m bhumi.cli migrate", help = "Apply schema migrations to the active profile" }
 acquire = { cmd = "python -m bhumi.cli acquire", help = "Register + vault a source document" }
 ingest  = { cmd = "python -m bhumi.cli ingest", help = "Run the READ pipeline over registered docs" }
+assay   = { cmd = "python -m bhumi.cli assay", help = "assay run/explain/reeval --doc-id ..." }
 serve   = { cmd = "python -m bhumi.cli serve", help = "Start the UI (runs doctor + migrate first)" }
 test    = { cmd = "pytest -q" }
 lint    = { cmd = "ruff check . && ruff format --check . && mypy src" }

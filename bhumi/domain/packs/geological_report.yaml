@@ -1,0 +1,135 @@
+# Domain knowledge as data, not code (CLAUDE.md rule 9). Adding a table
+# type or a column mapping is a diff to this file, never a Python change.
+#
+# Two table types below, and they are NOT equally verified:
+#
+#   seam_range_summary_table — built against a REAL CMPDI Geological Report
+#     (Marwatola Sector-I & II, G2 stage, NMET, fetched 2026-09-04). See
+#     docs/REAL_DOC_FINDINGS.md. Column headers, borehole ID formats and
+#     the Min/Max structure are all taken from that real document.
+#
+#   seam_thickness_table — models THIS CODEBASE'S OWN synthetic sample
+#     generator (scripts/make_sample_pdf.py) only. It has never matched
+#     anything found in a real document (an exhaustive search of the real
+#     GR for a per-borehole gross/net/ash/gcv/grade row found zero matches
+#     — see docs/REAL_DOC_FINDINGS.md, "What this changes"). Kept so
+#     `task ingest -- --sample` keeps demonstrating candidate emission;
+#     do not point to this type as evidence the pack works on real data.
+pack: geological_report
+version: 3
+# v3 (2026-09-05): widened the borehole regex separator class to accept
+# "." as well as "-"/space, after "SKM.18" was found soft-rejecting at G2
+# for want of a matched entity. See PROVENANCE.md and the assay reeval
+# demo it enables.
+applies_to:
+  doc_kinds: [geological_report, sample]
+
+table_types:
+  seam_range_summary_table:
+    caption_patterns:
+      - "range of seam thickness"
+      - "seam.*proximate analysis"
+    header_signature: ["seam name", "range", "thickness", "gcv", "grade"]
+    min_signature_overlap: 3
+    columns:
+      - match: ["seam name"]
+        role: entity
+        entity_type: seam
+      - match: ["effective thickness"]
+        role: metric
+        metric_key: seam_thickness_net
+        expect_unit: m
+        unit_from_header: true
+        stat_from_header: true
+      - match: ["seam thickness"]
+        role: metric
+        metric_key: seam_thickness_gross
+        expect_unit: m
+        unit_from_header: true
+        stat_from_header: true
+      - match: ["ash"]
+        role: metric
+        metric_key: coal_ash_pct
+        expect_unit: "%"
+        unit_from_header: true
+        stat_from_header: true
+      - match: ["m%"]
+        role: metric
+        metric_key: coal_moisture_pct
+        expect_unit: "%"
+        unit_from_header: true
+        stat_from_header: true
+      - match: ["vm%"]
+        role: metric
+        metric_key: coal_vm_pct
+        expect_unit: "%"
+        unit_from_header: true
+        stat_from_header: true
+      - match: ["fc%"]
+        role: metric
+        metric_key: coal_fc_pct
+        expect_unit: "%"
+        unit_from_header: true
+        stat_from_header: true
+      - match: ["gcv"]
+        role: metric
+        metric_key: coal_gcv
+        expect_unit: kcal/kg
+        stat_from_header: true
+      - match: ["grade"]
+        role: metric
+        metric_key: coal_grade_band
+        value_type: categorical
+        stat_from_header: true
+
+  seam_thickness_table:
+    caption_patterns:
+      - "seam[- ]wise thickness"
+      - "thickness of seams?"
+    header_signature: [seam, borehole, gross, net, thickness, "bh no"]
+    min_signature_overlap: 2
+    columns:
+      - match: ["seam"]
+        role: qualifier
+        qualifier_key: seam
+      - match: ["bh no", "borehole", "bore hole"]
+        role: entity
+        entity_type: borehole
+      - match: ["gross"]
+        role: metric
+        metric_key: seam_thickness_gross
+        expect_unit: m
+        unit_from_header: true
+      - match: ["net"]
+        role: metric
+        metric_key: seam_thickness_net
+        expect_unit: m
+        unit_from_header: true
+      - match: ["ash"]
+        role: metric
+        metric_key: coal_ash_pct
+        expect_unit: "%"
+      - match: ["gcv", "calorific"]
+        role: metric
+        metric_key: coal_gcv
+        expect_unit: kcal/kg
+      - match: ["grade"]
+        role: metric
+        metric_key: coal_grade_band
+        value_type: categorical
+
+entity_patterns:
+  borehole:
+    # CSM I&II-NN and MSM-NN verified against the real GR; SKM/SGT below
+    # are the design doc's illustrative series, unverified against any
+    # real document and kept only for the synthetic sample.
+    regex: '\b(CSM\s*I\s*&\s*II|MSM|SKM|SGT)[\s.\-]+(\d{1,4})\b'
+    normalise: "{prefix}-{number}"
+  seam:
+    # "III top", "III Middle", "III Bottom", "III Combined", "IIIA", "IV"
+    # observed in the real GR (docs/REAL_DOC_FINDINGS.md #5) — broadened
+    # from the design doc's "Seam <roman> <position>" phrasing, which
+    # doesn't literally occur (no "Seam" prefix word in this table's own
+    # values; the column header supplies that context instead).
+    regex: '\b([IVXL]+A?)\s*(Top|Middle|Bottom|Combined)?\b'
+    normalise: "{roman} {position}"

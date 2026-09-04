@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 from sqlalchemy.orm import Session
 
 from bhumi.config.settings import get_settings
-from bhumi.read.headers import resolve_headers
+from bhumi.read.headers import column_x_ranges, resolve_headers
 from bhumi.storage.db.engine import make_engine
 from bhumi.storage.db.models import DocumentAst, SourceRegistry
 
@@ -45,13 +45,17 @@ table_labels = [f"{t['element_id']} (page {t['page_no']}, {t['num_rows']}x{t['nu
 table_idx = st.selectbox("Table", range(len(ast["tables"])), format_func=lambda i: table_labels[i])
 table = ast["tables"][table_idx]
 
-# reconstruct row-major text grid for header resolution
+# reconstruct row-major text + bbox grids for header resolution
 grid: list[list[str]] = [["" for _ in range(table["num_cols"])] for _ in range(table["num_rows"])]
+bbox_grid: list[list[tuple | None]] = [[None for _ in range(table["num_cols"])] for _ in range(table["num_rows"])]
 cell_by_rc = {}
 header_row_count = 0
 for cell in table["cells"]:
     grid[cell["row"]][cell["col"]] = cell["text"]
     cell_by_rc[(cell["row"], cell["col"])] = cell
+    if cell["bbox"]:
+        b = cell["bbox"]
+        bbox_grid[cell["row"]][cell["col"]] = (b["l"], b["t"], b["r"], b["b"])
     if cell["column_header"]:
         header_row_count = max(header_row_count, cell["row"] + 1)
 
@@ -69,7 +73,8 @@ with left:
     col = st.selectbox("Column", range(table["num_cols"]), format_func=lambda c: f"col {c}")
 
     cell = cell_by_rc.get((row, col))
-    header_chain = resolve_headers(grid, header_row_count, col)
+    col_ranges = column_x_ranges(bbox_grid, table["num_cols"])
+    header_chain = resolve_headers(grid, header_row_count, col, cell_bboxes=bbox_grid, col_ranges=col_ranges)
 
     st.markdown(f"**Value:** `{cell['text']}`")
     st.markdown(f"**Header chain:** {' › '.join(header_chain) if header_chain else '(none)'}")

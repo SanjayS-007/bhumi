@@ -22,6 +22,8 @@ class TableCell(BaseModel):
     column_header: bool = False
     bbox: Optional[BBox] = None
     footnote_markers: list[str] = []
+    confidence: float = 0.0
+    header_resolved: bool = False
 
 
 class TableElement(BaseModel):

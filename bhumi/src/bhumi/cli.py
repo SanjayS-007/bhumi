@@ -80,7 +80,11 @@ def acquire(
 
 
 @app.command()
-def ingest(sample: bool = typer.Option(False, "--sample"), doc_id: str = typer.Option(None)):
+def ingest(
+    sample: bool = typer.Option(False, "--sample"),
+    doc_id: str = typer.Option(None),
+    pages: str = typer.Option(None, "--pages", help="1-indexed inclusive range, e.g. '14-19'"),
+):
     """Run the READ pipeline over registered docs, or synthesize + ingest the sample doc."""
     from bhumi.acquire.registry import register_local_file
     from bhumi.read.pipeline import run_read_pipeline
@@ -111,11 +115,79 @@ def ingest(sample: bool = typer.Option(False, "--sample"), doc_id: str = typer.O
 
     from bhumi.storage.db.models import SourceRegistry
 
+    page_range = None
+    if pages:
+        lo, hi = pages.split("-")
+        page_range = (int(lo), int(hi))
+
     with Session(engine) as session:
         row = session.query(SourceRegistry).filter_by(doc_id=doc_id).one()
-        pdf_path = settings.data_dir.parent / row.vault_ref if not Path(row.vault_ref).is_absolute() else Path(row.vault_ref)
-        ast = run_read_pipeline(session, settings, row.doc_id, row.artifact_id, pdf_path)
+        vault_ref = Path(row.vault_ref)
+        pdf_path = vault_ref if vault_ref.is_absolute() else settings.data_dir / vault_ref
+        ast = run_read_pipeline(session, settings, row.doc_id, row.artifact_id, pdf_path, page_range=page_range)
     console.print(f"ingested {doc_id}: pages={len(ast.pages)} tables={len(ast.tables)}")
+
+
+assay_app = typer.Typer(add_completion=False)
+app.add_typer(assay_app, name="assay")
+
+
+@assay_app.command("run")
+def assay_run(doc_id: str = typer.Option(..., "--doc-id")):
+    """Type + emit candidates + run the seven gates for one ingested document."""
+    from bhumi.assay.pipeline import run_assay
+    from bhumi.domain.pack_loader import load_default_pack
+    from bhumi.storage.db.models import DocumentAst, SourceRegistry
+
+    settings = get_settings()
+    engine = db_migrate(settings)
+    pack = load_default_pack()
+    with Session(engine) as session:
+        src = session.query(SourceRegistry).filter_by(doc_id=doc_id).one()
+        ast_row = session.get(DocumentAst, doc_id)
+        result = run_assay(session, doc_id, src.artifact_id, ast_row.ast_path, pack)
+    console.print(f"[green]assay run[/green] {result}")
+
+
+@assay_app.command("explain")
+def assay_explain(candidate_id: str = typer.Option(..., "--candidate-id")):
+    """Show gate-by-gate verdicts and the failure reason for one candidate."""
+    from bhumi.storage.db.models import CandidateFactRow
+
+    settings = get_settings()
+    engine = db_migrate(settings)
+    with Session(engine) as session:
+        row = session.get(CandidateFactRow, candidate_id)
+        if not row:
+            console.print(f"[red]no such candidate: {candidate_id}[/red]")
+            raise typer.Exit(1)
+        console.print(f"{row.entity_id} · {row.metric_key} = {row.value_raw} {row.unit or ''} — state={row.state}")
+        for g in row.gate_results:
+            mark = "PASS" if g["passed"] else "FAIL"
+            console.print(f"  [{mark}] {g['gate']}: {g['reason']}")
+        if row.failed_gate:
+            console.print(f"[yellow]failed at {row.failed_gate}: {row.failure_reason}[/yellow]")
+
+
+@assay_app.command("reeval")
+def assay_reeval_cmd(
+    reason: str = typer.Option(..., "--reason"),
+    doc_id: str = typer.Option(None, "--doc-id"),
+):
+    """Re-evaluate soft_rejected candidates — the retroactive-improvement demo."""
+    from bhumi.assay.reeval import reeval_soft_rejected
+    from bhumi.domain.pack_loader import load_default_pack
+
+    settings = get_settings()
+    engine = db_migrate(settings)
+    pack = load_default_pack()
+    with Session(engine) as session:
+        result = reeval_soft_rejected(session, reason, pack, doc_id)
+    console.print(
+        f"re-evaluating {result['total']} soft_rejected candidates\n"
+        f"  {result['recovered']} now pass -> pending_review or auto_passed\n"
+        f"  {result['unchanged']} still soft_rejected"
+    )
 
 
 @app.command()

@@ -8,6 +8,9 @@ data/rasters/
 data/models/
 data/*.db
 data/sample.pdf
+data/*.pdf
+data/*.docx
+data/*.doc
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/

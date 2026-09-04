@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import JSON, DateTime, Integer, String, Float
+from sqlalchemy import JSON, DateTime, Float, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from bhumi.storage.db.types import DecimalString
 
 
 class Base(DeclarativeBase):
@@ -70,6 +72,53 @@ class ReadRun(Base):
     started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     tier_counts: Mapped[dict] = mapped_column(JSON, default=dict)
     duration_s: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class CandidateFactRow(Base):
+    """Phase 4 (Assay) state machine. Never hard-deleted (CLAUDE.md rule
+    10) — soft_rejected candidates stay, with a reason, for re-evaluation."""
+
+    __tablename__ = "candidate_fact"
+
+    candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String, index=True)
+    entity_raw: Mapped[str] = mapped_column(String)
+    entity_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    metric_raw: Mapped[str] = mapped_column(String)
+    metric_key: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    value_raw: Mapped[str] = mapped_column(String)
+    value: Mapped[object | None] = mapped_column(DecimalString, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    unit_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    qualifiers: Mapped[dict] = mapped_column(JSON, default=dict)
+    period: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[dict] = mapped_column(JSON)
+    extraction_confidence: Mapped[float] = mapped_column(Float)
+    domain_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    domain_pack_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    state: Mapped[str] = mapped_column(String, index=True, default="candidate")
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    gate_results: Mapped[list] = mapped_column(JSON, default=list)
+    failed_gate: Mapped[str | None] = mapped_column(String, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    assay_run_id: Mapped[str] = mapped_column(String, index=True)
+    reeval_count: Mapped[int] = mapped_column(Integer, default=0)
+    approver: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class AssayRun(Base):
+    __tablename__ = "assay_run"
+
+    run_id: Mapped[str] = mapped_column(String, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String, index=True)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    domain_pack_version: Mapped[int] = mapped_column(Integer)
+    state_counts: Mapped[dict] = mapped_column(JSON, default=dict)
+    gate_failure_counts: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class ReviewQueueItem(Base):

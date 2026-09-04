@@ -51,5 +51,11 @@ def write_report(settings: Settings, offline: bool = False, out_path: Path = Pat
     caps = run_all_probes(offline=offline)
     text = render_report(caps, settings)
     out_path.write_text(text, encoding="utf-8")
-    strict_ok = not any(c.status in BLOCKING and c.name in {"pymupdf", "python_runtime"} for c in caps)
+    by_name = {c.name: c for c in caps}
+    strict_ok = (
+        by_name["pymupdf"].status == CapabilityStatus.OK
+        and by_name["python_runtime"].status == CapabilityStatus.OK
+        and by_name["pytest_basetemp"].status != CapabilityStatus.UNAVAILABLE
+        and by_name["uv_project_environment"].status != CapabilityStatus.DEGRADED
+    )
     return text, strict_ok

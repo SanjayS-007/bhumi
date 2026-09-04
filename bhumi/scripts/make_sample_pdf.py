@@ -17,6 +17,15 @@ TABLE_ROWS = [
     # data rows
     ["Seam III Top", "SKM-12", "3.42", "2.91", "34.2*", "4180", "G9"],
     ["Seam III Top", "SKM-14", "3.38", "2.85", "33.9", "4150", "G9"],
+    # deliberately-bad row for the Assay demo: net (3.60) > gross (3.10) is
+    # physically impossible — a synthetic stand-in for an OCR digit error,
+    # so MVP-2's net_le_gross rule has something real to catch and reject.
+    ["Seam III Top", "SKM-16", "3.10", "3.60", "35.1", "4120", "G9"],
+    # deliberately-unmatched borehole ID spelling variant, for the Assay
+    # reeval demo: the shipped entity pattern doesn't accept "." as a
+    # prefix/number separator, so this row's candidates soft-reject at
+    # G2 (missing entity_id) until a domain-pack update widens the regex.
+    ["Seam III Top", "SKM.18", "3.30", "2.80", "34.0", "4160", "G9"],
 ]
 
 
