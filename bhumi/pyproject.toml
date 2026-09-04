@@ -1,0 +1,70 @@
+[project]
+name = "bhumi"
+version = "0.0.1"
+description = "BHUMI — coal-sector document intelligence data layer (MVP-0/MVP-1)"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "sqlalchemy>=2.0",
+  "alembic>=1.13",
+  "pymupdf>=1.24",
+  "sqlite-vec>=0.1.6",
+  "structlog>=24.1",
+  "rich>=13.7",
+  "typer>=0.12",
+  "psutil>=5.9",
+  "python-dotenv>=1.0",
+  "streamlit>=1.37",
+  "pillow>=10.3",
+  "taskipy>=1.13",
+]
+
+[project.optional-dependencies]
+read = ["docling>=2.0", "docling-core>=2.0"]
+postgres = ["psycopg[binary]>=3.1", "pgvector>=0.2.5"]
+embed = ["sentence-transformers>=3.0"]
+gpu = ["torch>=2.3"]
+ocr = ["paddlepaddle", "paddleocr"]
+dev = ["pytest>=8.2", "pytest-cov", "ruff>=0.5", "mypy>=1.10", "hypothesis"]
+
+[tool.taskipy.tasks]
+doctor  = { cmd = "python -m bhumi.cli doctor", help = "Probe environment, write ENVIRONMENT_REPORT.md" }
+migrate = { cmd = "python -m bhumi.cli migrate", help = "Apply schema migrations to the active profile" }
+acquire = { cmd = "python -m bhumi.cli acquire", help = "Register + vault a source document" }
+ingest  = { cmd = "python -m bhumi.cli ingest", help = "Run the READ pipeline over registered docs" }
+serve   = { cmd = "python -m bhumi.cli serve", help = "Start the UI (runs doctor + migrate first)" }
+test    = { cmd = "pytest -q" }
+lint    = { cmd = "ruff check . && ruff format --check . && mypy src" }
+fmt     = { cmd = "ruff format . && ruff check --fix ." }
+profile = { cmd = "python -m bhumi.cli profile", help = "Show active profile and resolved backends" }
+verify  = { cmd = "python -m bhumi.cli doctor --strict && pytest -q", help = "CI gate" }
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# ponytail: default ruff turns on style rules (import sort, blind-except,
+# datetime.UTC alias) that add churn without catching real bugs at this
+# project stage. Keep only the correctness-leaning defaults; widen later if
+# a second contributor needs the stricter set for consistency.
+select = ["E", "F", "W"]
+# E501 (line length) and E741 (ambiguous name `l`) are deliberately off:
+# `l/t/r/b` mirrors the design doc's BBox field names exactly, and several
+# f-string log lines are more readable long than wrapped. Not laziness about
+# real bugs — F-codes (undefined names, unused imports) stay strict.
+ignore = ["E501", "E741"]
+
+[tool.pytest.ini_options]
+# ponytail: this machine's %TEMP%\pytest-of-<user> is not writable (locked-down
+# laptop ACL quirk, verified 2026-09-04) — pytest's default tmp_path factory
+# fails there. Route basetemp inside the repo instead. Revisit if this repo
+# ever needs a completely clean checkout-only tree (e.g. read-only CI mount).
+addopts = "--basetemp=.pytest_tmp"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bhumi"]
