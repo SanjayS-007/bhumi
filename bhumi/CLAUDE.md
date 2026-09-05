@@ -199,13 +199,39 @@ coverage matview (Phase 6.5), Topic Intelligence (Lens 1/3/4), Hindi
 output, Note for Supplementaries, a Report Engine approval step — the
 last four explicitly overridden out of scope by the same session's later
 instruction (see PROVENANCE.md). Full detail: `SESSION_REPORT.md`'s
-newest addendum, `PROVENANCE.md`'s newest sections. 87 tests pass, 2
-correctly auto-skipped (no CUDA; no GROQ_API_KEY). `.github/workflows/
-ci.yml` exists and is committed but does **not** run yet — both a
-Windows and an Ubuntu attempt failed identically with a bare
-`startup_failure`, diagnosed as an account-level Actions restriction on
-this GitHub account, not a workflow bug (see PROVENANCE.md). It will
-start running the moment that's resolved on GitHub's side.
+newest addendum, `PROVENANCE.md`'s newest sections.
+
+**Addon 5, model-backend precedence bug found and fixed**: a direct user
+challenge caught that `task models` was silently defaulting every
+capability to Azure — a real bug (`select.py` reused one Azure-first list
+for both explicit lookup and the "auto" default). Fixed: `AUTO_CASCADE =
+("groq", "gemini")` is now a separate list from the explicit-override
+table, so Azure is default-excluded everywhere and only reachable via
+`BHUMI_MODEL_BACKEND=azure`/`BHUMI_BACKEND_<X>=azure`. Groq gained
+round-robin across multiple free-tier keys (`GROQ_API_KEYS`,
+comma-separated, 429-triggered failover) — real, unit-verified code,
+**confirmed unreachable from this specific machine** (this org's Zscaler
+proxy blocks `api.groq.com` outright, confirmed two independent ways:
+raw curl and a real `openai.APIConnectionError`), not confirmed working.
+That same attempt caught a second bug: the old live Groq test went
+through the fallback wrapper, which silently absorbed that connection
+error and substituted the deterministic backend's output — a false
+pass. Fixed by calling the concrete backend directly and asserting
+Groq-specific output; the network-block case is now an explicit,
+correctly-scoped `pytest.skip`. Gemini remains confirmed broken by
+Google (`AQ.`-key issue, not this code). 87 tests pass, 2 correctly
+skipped (no CUDA; Groq's diagnosed network block).
+
+**Repo is now public** (`github.com/SanjayS-007/bhumi`) — checked full
+git history for secrets first (none found: `.env` never tracked, no
+key-shaped strings in any commit). `.github/workflows/ci.yml` exists and
+is committed but does **not** run yet: going public got CI past the
+opaque zero-job `startup_failure` into an actual scheduling attempt,
+which surfaced GitHub's own explicit reason — **the account
+(`SanjayS-007`) is locked due to a billing issue**, not a workflow or
+repo problem. Fixable only by the account owner at
+`github.com/settings/billing`; will start running the moment that
+clears.
 
 Prior status (MVP-0/1/2, steps 1–9 of the build order, step 12/CI not
 started):
