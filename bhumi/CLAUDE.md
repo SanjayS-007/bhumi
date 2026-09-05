@@ -200,8 +200,12 @@ output, Note for Supplementaries, a Report Engine approval step — the
 last four explicitly overridden out of scope by the same session's later
 instruction (see PROVENANCE.md). Full detail: `SESSION_REPORT.md`'s
 newest addendum, `PROVENANCE.md`'s newest sections. 87 tests pass, 2
-correctly auto-skipped (no CUDA; no GROQ_API_KEY). CI now runs this on
-every push (`.github/workflows/ci.yml`).
+correctly auto-skipped (no CUDA; no GROQ_API_KEY). `.github/workflows/
+ci.yml` exists and is committed but does **not** run yet — both a
+Windows and an Ubuntu attempt failed identically with a bare
+`startup_failure`, diagnosed as an account-level Actions restriction on
+this GitHub account, not a workflow bug (see PROVENANCE.md). It will
+start running the moment that's resolved on GitHub's side.
 
 Prior status (MVP-0/1/2, steps 1–9 of the build order, step 12/CI not
 started):
