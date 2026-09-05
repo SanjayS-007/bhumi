@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from bhumi.acquire.registry import register_local_file
-from bhumi.agents.pq_desk import answer_question
+from bedrock_harness.pq_client import answer_question
 from bhumi.assay.pipeline import run_assay
 from bhumi.config.settings import Settings
 from bhumi.domain.pack_loader import load_default_pack

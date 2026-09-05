@@ -231,11 +231,50 @@ def graph_seed_admin():
 
 
 @app.command()
-def serve():
-    """Self-healing: run doctor + migrate, then start the drill-down UI."""
+def serve(skip_models: bool = typer.Option(False, "--skip-models", help="skip the fetch_models/resource-budget steps entirely")):
+    """Self-healing: doctor -> migrate -> fetch_models -> resource-budget
+    check -> UI, as one step-by-step orchestrated flow (base design §7).
+    Every step is best-effort except migrate: a fetch_models failure or a
+    resource-budget rejection is printed and never blocks the UI from
+    starting, since nothing in this codebase auto-loads a heavy model at
+    serve-time yet on the sqlite profile — there's nothing for either
+    step to actually gate. They're real and exercised now so they're
+    ready the moment that changes."""
     settings = get_settings()
+
+    console.print("[bold]1/4[/bold] doctor")
     write_report(settings)
+
+    console.print("[bold]2/4[/bold] migrate")
     db_migrate(settings)
+
+    planned_models: list[str] = []
+    if not skip_models:
+        console.print("[bold]3/4[/bold] fetch_models")
+        from scripts.fetch_models import fetch_all
+
+        try:
+            results = fetch_all(settings.profile.value)
+            for r in results:
+                console.print(f"    {r.name}: {r.status} — {r.detail}")
+            planned_models = [r.name for r in results if r.status in ("downloaded", "already_present")]
+        except Exception as e:
+            console.print(f"    [yellow]fetch_models step failed, continuing[/yellow]: {e}")
+
+        console.print("[bold]4/4[/bold] resource-budget admission check")
+        from bhumi.runtime.resources import check_admission
+
+        try:
+            admission = check_admission(settings.profile.value, planned_models, max_ram_gb=settings.max_ram_gb, max_vram_gb=settings.max_vram_gb)
+            color = "green" if admission.admitted else "yellow"
+            console.print(f"    [{color}]admitted={admission.admitted}[/{color}] — {admission.reason} "
+                          f"(est. RAM {admission.estimated_ram_gb:.1f}GB / avail {admission.available_ram_gb:.1f}GB, "
+                          f"est. VRAM {admission.estimated_vram_gb:.1f}GB / avail {admission.available_vram_gb:.1f}GB)")
+        except Exception as e:
+            console.print(f"    [yellow]resource-budget check failed, continuing[/yellow]: {e}")
+    else:
+        console.print("[dim]3-4/4 skipped (--skip-models)[/dim]")
+
     ui_path = Path(__file__).resolve().parents[2] / "ui" / "app.py"
     subprocess.run([sys.executable, "-m", "streamlit", "run", str(ui_path)])
 

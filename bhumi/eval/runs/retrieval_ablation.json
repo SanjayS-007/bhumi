@@ -104,9 +104,111 @@
         }
       ]
     },
+    "+azure_rerank": {
+      "hits": 11,
+      "hit_at_5": 0.6875,
+      "questions": [
+        {
+          "query": "SOIL",
+          "expected": "SOIL",
+          "why": "seam-row token is literal in its own raw_text",
+          "hit": true
+        },
+        {
+          "query": "WM",
+          "expected": "WM",
+          "why": "another seam-code token literal in raw_text",
+          "hit": true
+        },
+        {
+          "query": "Report format for mineral resources",
+          "expected": "Report format for mineral resources",
+          "why": "NMET doc's own title-page text is literal in raw_text",
+          "hit": true
+        },
+        {
+          "query": "Six faults have been interpreted",
+          "expected": "Six faults have been interpreted",
+          "why": "narrative sentence literal in raw_text",
+          "hit": true
+        },
+        {
+          "query": "Specific gravity/bulk density calculation",
+          "expected": "Specific gravity/bulk density calculation",
+          "why": "NMET contents-list phrase literal in raw_text",
+          "hit": true
+        },
+        {
+          "query": "Marwatola Sector-I & II Block",
+          "expected": "Marwatola Sector-I & II Block",
+          "why": "doc title phrase - absent from seam-row raw_text, present in every chunk's prefix",
+          "hit": false
+        },
+        {
+          "query": "Sohagpur Coalfield",
+          "expected": "Sohagpur Coalfield",
+          "why": "doc title phrase - absent from seam-row raw_text, present in prefix",
+          "hit": true
+        },
+        {
+          "query": "mineral resources of G4/G3/G2 stage investigation",
+          "expected": "mineral resources of G4/G3/G2 stage investigation",
+          "why": "NMET doc title phrase - absent from most raw_text, present in prefix",
+          "hit": false
+        },
+        {
+          "query": "SOIL",
+          "expected": "ROOF DEPTH",
+          "why": "row has numbers only; column header 'ROOF DEPTH' is in the parent table header",
+          "hit": false
+        },
+        {
+          "query": "SOIL",
+          "expected": "THICKNESS",
+          "why": "row lacks the word THICKNESS; parent table header names the column",
+          "hit": false
+        },
+        {
+          "query": "Parting",
+          "expected": "FRL",
+          "why": "row is numeric; FRL column label only in parent header",
+          "hit": false
+        },
+        {
+          "query": "MSM-27",
+          "expected": "MSM-27",
+          "why": "exact hyphenated borehole ID, only in one row's raw_text",
+          "hit": true
+        },
+        {
+          "query": "CSM I&II-06",
+          "expected": "CSM I&II-06",
+          "why": "exact hyphenated seam/borehole ID, appears in the row grid",
+          "hit": true
+        },
+        {
+          "query": "120.10",
+          "expected": "120.10",
+          "why": "one specific measured thickness value, not a header or category word",
+          "hit": true
+        },
+        {
+          "query": "42.63",
+          "expected": "42.63",
+          "why": "another specific measured value, different row than the one above",
+          "hit": true
+        },
+        {
+          "query": "stripping ratio",
+          "expected": null,
+          "why": "not present in either real document \u2014 correct answer is zero hits, not a guess",
+          "hit": true
+        }
+      ]
+    },
     "+contextual_prefix": {
-      "hits": 16,
-      "hit_at_5": 1.0,
+      "hits": 14,
+      "hit_at_5": 0.875,
       "questions": [
         {
           "query": "SOIL",
@@ -160,13 +262,13 @@
           "query": "SOIL",
           "expected": "ROOF DEPTH",
           "why": "row has numbers only; column header 'ROOF DEPTH' is in the parent table header",
-          "hit": true
+          "hit": false
         },
         {
           "query": "SOIL",
           "expected": "THICKNESS",
           "why": "row lacks the word THICKNESS; parent table header names the column",
-          "hit": true
+          "hit": false
         },
         {
           "query": "Parting",
@@ -207,8 +309,8 @@
       ]
     },
     "+parent_expansion": {
-      "hits": 15,
-      "hit_at_5": 0.9375,
+      "hits": 13,
+      "hit_at_5": 0.8125,
       "questions": [
         {
           "query": "SOIL",
@@ -262,13 +364,13 @@
           "query": "SOIL",
           "expected": "ROOF DEPTH",
           "why": "row has numbers only; column header 'ROOF DEPTH' is in the parent table header",
-          "hit": true
+          "hit": false
         },
         {
           "query": "SOIL",
           "expected": "THICKNESS",
           "why": "row lacks the word THICKNESS; parent table header names the column",
-          "hit": true
+          "hit": false
         },
         {
           "query": "Parting",

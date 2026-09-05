@@ -34,7 +34,7 @@ from mcp.server import Server
 from mcp.types import TextContent, Tool
 
 from bhumi.broker import server as impl
-from bhumi.broker.authz import INTERNAL_REVIEWER, PUBLIC_CALLER, TOOLS, AccessDenied, Principal
+from bhumi.broker.authz import CMPDI_GEOLOGIST, INTERNAL_REVIEWER, PUBLIC_CALLER, TOOLS, AccessDenied, Principal, subsidiary_officer
 from bhumi.config.settings import get_settings
 from bhumi.storage.db.engine import make_engine, raw_sqlite_connection
 
@@ -55,24 +55,41 @@ _TOOL_SCHEMAS = {
     "record_answer": {"answer_id": _STR, "package_id": _STR},
     "get_trace_graph": {"kind": _STR, "node_id": _STR},
     "revision_impact": {"fact_id": _STR, "new_value": _STR, "tolerance": _STR},
+    "list_review_queue": {"doc_id": _STR},
+    "list_geological_tables": {"doc_id": _STR},
+    "get_conformance_report": {"doc_id": _STR},
+    "merge_packages": {"package_ids": _STR_LIST, "intent": _STR},
+    "replay": {"package_id": _STR},
 }
 
 
 def _resolve_principal() -> Principal:
+    """Three personas (addon 3 §4.2), resolved from env vars set at
+    subprocess launch — see module docstring on why stdio has no header
+    to carry this instead. `subsidiary_officer` additionally reads
+    `BHUMI_CALLER_ENTITY_SCOPE` (comma-separated doc_ids) since its whole
+    point is that the scope varies by which subsidiary is connecting."""
     role = os.environ.get("BHUMI_CALLER_ROLE", "public").lower()
     if role == "internal":
         return INTERNAL_REVIEWER
     if role == "public":
         return PUBLIC_CALLER
-    raise ValueError(f"unknown BHUMI_CALLER_ROLE={role!r}, expected 'public' or 'internal'")
+    if role == "cmpdi_geologist":
+        return CMPDI_GEOLOGIST
+    if role == "subsidiary_officer":
+        doc_ids = [d.strip() for d in os.environ.get("BHUMI_CALLER_ENTITY_SCOPE", "").split(",") if d.strip()]
+        return subsidiary_officer(doc_ids)
+    raise ValueError(f"unknown BHUMI_CALLER_ROLE={role!r}, expected public/internal/cmpdi_geologist/subsidiary_officer")
 
 
 def _visible_tools(principal: Principal) -> list[Tool]:
-    """Filtered by this Principal's scopes — with only two personas and
-    identical TOOLS scopes for both today, this returns the same 6 tools
-    either way, but the filter is real: a future persona with a narrower
-    scope would see a shorter list at the protocol layer, not just get an
-    AccessDenied after asking for a tool it couldn't see."""
+    """Filtered by this Principal's scopes — all four personas share the
+    same `TOOLS` scope today (the real distinctions are `max_
+    classification` and `entity_scope`, enforced inside each tool, not
+    in which tools are visible), but the filter is real: a future
+    persona with a narrower tool scope would see a shorter list at the
+    protocol layer, not just get an AccessDenied after asking for a tool
+    it couldn't see."""
     return [
         Tool(name=name, description=f"BEDROCK tool: {name}", inputSchema={
             "type": "object", "properties": _TOOL_SCHEMAS.get(name, {}),
@@ -121,8 +138,25 @@ def build_server() -> Server:
                 result = impl.get_trace_graph(session, principal, arguments["kind"], arguments["node_id"])
             elif name == "revision_impact":
                 result = impl.revision_impact(session, principal, arguments["fact_id"], arguments["new_value"], arguments.get("tolerance", "0.01"))
+            elif name == "list_review_queue":
+                result = impl.list_review_queue(session, principal, arguments.get("doc_id"))
+            elif name == "list_geological_tables":
+                result = impl.list_geological_tables(session, principal, arguments["doc_id"])
+            elif name == "get_conformance_report":
+                result = impl.get_conformance_report(session, principal, arguments["doc_id"])
+            elif name == "merge_packages":
+                result = impl.merge_packages(session, principal, arguments["package_ids"], arguments["intent"])
+            elif name == "replay":
+                result = impl.replay(session, principal, arguments["package_id"])
             else:
-                raise AccessDenied(f"no such BEDROCK tool: {name}")
+                # not a real tool at all — still route through authorize()
+                # so the attempt is audited, not silently rejected before
+                # ever reaching the log (addon 3 §4.2: EVERY decision).
+                # `name` is never in any principal's scopes, so this always
+                # raises AccessDenied itself (and logs it) — no unreachable
+                # fallback raise needed after it.
+                from bhumi.broker.authz import authorize as _authorize
+                _authorize(session, principal, name)
         except AccessDenied as e:
             return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
         return [TextContent(type="text", text=json.dumps(result, default=str))]

@@ -12,8 +12,8 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from bhumi.acquire.registry import register_local_file
-from bhumi.agents.pq_desk import answer_question
-from bhumi.agents.report_engine import SectionSpec, generate_report
+from bedrock_harness.pq_client import answer_question
+from bedrock_harness.report_client import SectionSpec, generate_report
 from bhumi.assay.pipeline import run_assay
 from bhumi.broker.mcp_client import _call_tool_async, _list_tools_async
 from bhumi.config.settings import Settings

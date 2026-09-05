@@ -1,0 +1,24 @@
+# Resource-budget admission check (base design §7). Estimated RAM/VRAM
+# cost per model this codebase knows about (config/models.yaml's names),
+# and the budget each profile is allowed to spend before admission is
+# refused. Estimates, not measurements — labeled as such in
+# runtime/resources.py's docstring; nothing here has been measured by an
+# actual model load on this machine (no GPU, and most of these models
+# were never fetched here — see PROVENANCE.md).
+budgets:
+  sqlite:
+    max_ram_gb: null   # null = use whatever's actually available right now
+    max_vram_gb: 0.0    # no CUDA on this machine
+  supabase:
+    max_ram_gb: null
+    max_vram_gb: 0.0
+  workstation:
+    max_ram_gb: null
+    max_vram_gb: 6.0    # this session's target workstation: RTX 4050, 6GB VRAM
+
+model_costs_gb:
+  embeddings_bge_small: {ram: 0.5, vram: 0.3}
+  entailment_minicheck: {ram: 3.5, vram: 3.0}
+  narrative_llm_qwen25_3b: {ram: 4.0, vram: 3.5}
+  docling_layout_tableformer: {ram: 1.5, vram: 1.0}
+  paddleocr_vl: {ram: 2.0, vram: 4.0}

@@ -30,6 +30,7 @@ def search_evidence(
             "chunk_id": chunk.chunk_id, "score": score, "raw_text": chunk.raw_text,
             "parent_text": parent.raw_text if parent else chunk.raw_text,
             "source": chunk.source, "classification": chunk.classification, "candidate_id": chunk.candidate_id,
+            "doc_id": chunk.doc_id,
         })
         if len(results) >= k:
             break

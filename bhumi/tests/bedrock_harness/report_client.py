@@ -1,8 +1,18 @@
-"""Report Engine agent — a reduced but real slice (kickoff prompt §4.3).
-Only imports bhumi.broker.mcp_client — every BEDROCK call is a real MCP
-protocol round-trip over stdio, not an in-process function call. Human-
-approval workflow is deferred — noted as not risky to defer, per the
-kickoff prompt.
+"""BEDROCK TEST HARNESS — NOT THE REAL REPORT ENGINE SERVICE.
+
+This module exists to exercise BEDROCK's MCP tool surface against a
+different real consumption shape than pq_client.py: multi-section,
+multi-call evidence gathering (seal a package once, per-section coverage
+checks, per-section compute+narrate+gate) rather than a single question.
+
+It is deliberately thin. It does not represent the real Report Engine
+product, which will be designed and built as its own dedicated phase
+after the data layer and BEDROCK are complete (addon 3, 2026-09-06). Do
+not add product features here (a human-approval/freezing workflow reusing
+the Assay review pattern, derived/formula metrics, DOCX/PDF export) — that
+belongs to the real service's own design session. Only imports
+`bhumi.broker.mcp_client`, never storage/knowledge/broker-internals
+directly (enforced by tests/test_agents_use_broker_only.py).
 """
 from __future__ import annotations
 

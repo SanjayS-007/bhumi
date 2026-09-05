@@ -681,3 +681,115 @@ scale), and the base design's full demand-vs-provable coverage matview
 (Phase 6.5 — this session's `check_coverage` upgrade is real
 gate-failure reasons on the existing tool, a smaller and more honest
 scope than that larger feature).
+
+## FINAL_KICKOFF §0 + addon 3 (2026-09-06, continued further still)
+
+Two kickoffs landed close together: a "complete to demo-ready" prompt
+(Topic Intelligence, Hindi output, a report-engine approval step, a
+workstation proof), immediately followed by an addon that explicitly
+overrides the PQ Desk/Report Engine feature work in that prompt and
+redirects effort to hardening BEDROCK and the Knowledge Layer instead.
+Followed both: answered §0 honestly, then built what the addon actually
+asked for.
+
+### §0 — the workstation question
+**No**, the workstation transition has not happened, and it cannot
+happen from this session: there is no RTX 4050, no Postgres instance,
+no GPU of any kind reachable from this environment. This is a hardware/
+access constraint, not a scheduling one. The codebase's portability
+claim (one codebase, three profiles) is real *as code* — profile
+auto-detection, Tier-3 gating, and `runtime/model_slot.py` are identical
+across profiles by construction — but that is a different claim from
+"verified on real hardware," and only the first is true today. Whoever
+has physical or remote access to the actual workstation is the only one
+who can close this gap.
+
+### Addon 3 — relabeling and redirect
+`bhumi/agents/pq_desk.py` and `report_engine.py` moved to
+`tests/bedrock_harness/{pq_client,report_client}.py` with the exact
+"BEDROCK TEST HARNESS — NOT THE REAL ... SERVICE" header the addon
+specified. Nothing needed to be extracted-and-shelved (§2.3) — the
+Hindi/Note-for-Supplementaries/approval-reuse work from FINAL_KICKOFF
+§3/§4 was never started before the addon arrived and overrode it, so
+there was no feature creep to strip out.
+
+### BEDROCK hardening (addon 3 §4.2) — all five items real
+- **Audit log**: every allow/deny decision, real rows, queryable —
+  including attempts to call a tool name that doesn't exist at all.
+- **Four personas** (addon asked for three; a fourth fell out for free):
+  `public_caller`, `internal_reviewer`, `cmpdi_geologist` (same access as
+  internal — no invented distinction where the corpus has no data to
+  back one), and `subsidiary_officer(doc_ids)` — the real new dimension,
+  `entity_scope`, verified to actually restrict what a caller sees by
+  document, not just by classification tier.
+- **Package persistence + merge + replay**: sealed packages are stored
+  for real now, not just returned once and forgotten. `merge_packages`
+  re-authorizes against every source package's own classification
+  (can't launder access by merging). `replay` does the same for a single
+  package — and the adversarial test that matters passed: a restricted
+  package replayed under a public persona is refused, not leaked.
+- **Extended tool surface**: `list_review_queue`,
+  `list_geological_tables`, `get_conformance_report` — each a real query
+  over real data (review queue rows, AST table inventory, the actual
+  Assay run's gate breakdown), not stubs.
+- **Two real bugs found while building this**, both with the same
+  ultimate symptom (an opaque `JSONDecodeError` at the client with no
+  clue what actually went wrong): a missing `AccessDenied` import
+  causing a bare `NameError` inside the server subprocess, and Python
+  3.11's `TaskGroup` wrapping a legitimate, informative exception in a
+  generic `BaseExceptionGroup` on the way out of an async context
+  manager. Both fixed; the second fix (flatten-and-reraise in
+  `mcp_client.py`) will matter for every future AccessDenied case, not
+  just this one.
+
+### Knowledge Layer hardening (addon 3 §4.1)
+- **A real Fact revision**, not just a hypothetical one: starts from a
+  genuinely Assay-extracted candidate and constructs one deliberate
+  revision from it (clearly marked as constructed — no two real
+  documents in this corpus naturally produce a second version of the
+  same fact yet).
+- **Retrieval ablation gained a real `+azure_rerank` stage** and was
+  re-run on the now-3-document corpus. The honest, non-obvious result:
+  hit@5 at the two later stages *dropped* (1.00→0.88, 0.94→0.81) once
+  the third document's ~500 chunks joined the ranking pool — a real
+  corpus-size effect traced to one specific query, not a code
+  regression. Rerank itself showed zero improvement over lexical, for a
+  real, explainable reason: it can only reorder candidates lexical
+  already fetched, and several test questions are designed so the
+  answer only exists in a chunk's prefix, which a raw-text-only rerank
+  candidate pool structurally never contains.
+- **CI exists now** (`.github/workflows/ci.yml`) — Windows, sqlite
+  profile, `uv sync` + `ruff check` + `pytest`. This closes CLAUDE.md's
+  build-order step 12, open since the very first session.
+
+### Numbers
+Full suite re-run after all of the above (agent-move, BEDROCK hardening,
+knowledge-layer hardening): **87 passed, 2 skipped** (no CUDA; no
+GROQ_API_KEY), 0 failed, `ruff check .` clean. One real bug was caught
+by this exact full-suite run, not by inspection — a genuine
+`sqlite3.IntegrityError` in `seal_evidence_package` when sealing
+identical content twice (fixed; see PROVENANCE.md). The point of
+building CI in the same round is that this number is now independently
+reproducible on a fresh Windows runner, not just self-reported —
+`.github/workflows/ci.yml` will report it for every future commit.
+
+### What I'd tell a future team to do differently, starting over
+If I were starting this project again: get a **real** model credential
+(a working AI-Studio-format Gemini key, or an Azure/OpenAI key) verified
+with one raw HTTP call, on day one, before building any Protocol/
+backend-registry abstraction around it — three separate credential
+false starts (Claude org-restricted, Gemini malformed, Groq never
+provided) cost real session time that a five-minute manual `curl` check
+at the very start would have avoided entirely. Second: build the MCP
+protocol boundary (or whatever the real inter-process boundary is) *at
+the same time* as the first agent, not after — retrofitting it onto
+already-working in-process code found two real, non-obvious bugs
+(the tool-schema type bug, the AccessDenied-import bug) that would have
+been caught immediately if the boundary had existed from the start.
+Third: when a kickoff prompt says "build X," check whether X will still
+be the right thing to have built once the NEXT prompt arrives — this
+project's PQ Desk/Report Engine agents were reduced-but-real slices one
+session, then explicitly relabeled "not a product, a test harness" the
+next. That wasn't wasted work, but naming something a "test harness"
+from the very first line it's written would have made the eventual
+addon a non-event instead of a re-labeling exercise.

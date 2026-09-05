@@ -55,8 +55,29 @@ async def _list_tools_async(role: Role, env_overrides: dict | None = None) -> li
             return [t.name for t in result.tools]
 
 
+def _flatten_exception_group(exc: BaseException) -> list[BaseException]:
+    if isinstance(exc, BaseExceptionGroup):
+        flat: list[BaseException] = []
+        for sub in exc.exceptions:
+            flat += _flatten_exception_group(sub)
+        return flat
+    return [exc]
+
+
 def call_tool(tool_name: str, arguments: dict, role: Role, env_overrides: dict | None = None):
-    return asyncio.run(_call_tool_async(tool_name, arguments, role, env_overrides))
+    try:
+        return asyncio.run(_call_tool_async(tool_name, arguments, role, env_overrides))
+    except BaseExceptionGroup as eg:
+        # anyio's TaskGroup wraps any exception raised while an async
+        # context manager (stdio_client/ClientSession) is exiting in a
+        # BaseExceptionGroup, even when there's exactly one real cause
+        # (e.g. AccessDenied re-raised from a parsed error response) —
+        # unwrap so callers see that real exception directly, not a
+        # generic group with no useful __str__
+        flat = _flatten_exception_group(eg)
+        if len(flat) == 1:
+            raise flat[0] from eg
+        raise
 
 
 def list_tools(role: Role, env_overrides: dict | None = None) -> list[str]:
@@ -73,6 +94,36 @@ def compute_metric(metric_key: str, role: Role, entity_id: str | None = None, en
 
 def check_coverage(metric_key: str, role: Role, entity_id: str | None = None, env_overrides: dict | None = None) -> dict:
     return call_tool("check_coverage", {"metric_key": metric_key, "entity_id": entity_id}, role, env_overrides)
+
+
+def get_provenance(kind: str, node_id: str, role: Role, env_overrides: dict | None = None) -> list[dict]:
+    return call_tool("get_provenance", {"kind": kind, "node_id": node_id}, role, env_overrides)
+
+
+def list_review_queue(role: Role, doc_id: str | None = None, env_overrides: dict | None = None) -> list[dict]:
+    return call_tool("list_review_queue", {"doc_id": doc_id}, role, env_overrides)
+
+
+def list_geological_tables(doc_id: str, role: Role, env_overrides: dict | None = None) -> list[dict]:
+    return call_tool("list_geological_tables", {"doc_id": doc_id}, role, env_overrides)
+
+
+def get_conformance_report(doc_id: str, role: Role, env_overrides: dict | None = None) -> dict:
+    return call_tool("get_conformance_report", {"doc_id": doc_id}, role, env_overrides)
+
+
+def merge_packages(package_ids: list[str], intent: str, role: Role, env_overrides: dict | None = None) -> dict:
+    return call_tool("merge_packages", {"package_ids": package_ids, "intent": intent}, role, env_overrides)
+
+
+def replay(package_id: str, role: Role, env_overrides: dict | None = None) -> dict:
+    return call_tool("replay", {"package_id": package_id}, role, env_overrides)
+
+
+def subsidiary_env(doc_ids: list[str]) -> dict:
+    """Convenience for tests/callers: the env override a subsidiary
+    officer needs alongside `role="subsidiary_officer"`."""
+    return {"BHUMI_CALLER_ENTITY_SCOPE": ",".join(doc_ids)}
 
 
 def record_answer(answer_id: str, package_id: str, role: Role, env_overrides: dict | None = None) -> dict:

@@ -253,3 +253,39 @@ class ReviewQueueItem(Base):
     confidence: Mapped[float] = mapped_column(Float)
     bbox: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AuditLog(Base):
+    """Every BEDROCK authorize() decision, allowed or denied (addon 3
+    §4.2: "every allow/deny decision logged, queryable"). Append-only,
+    same discipline as everything else in this codebase — never edited
+    or deleted, only ever inserted."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    subject: Mapped[str] = mapped_column(String, index=True)
+    tool: Mapped[str] = mapped_column(String, index=True)
+    allowed: Mapped[bool] = mapped_column(default=True)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class SealedPackage(Base):
+    """Persisted `EvidencePackage` content, keyed by `package_id` (addon
+    3 §4.2: "package composition and replay... actually implemented").
+    Without this, `replay(package_id)` would have nothing real to replay
+    — the package was previously only ever returned to the caller and
+    never stored. `max_classification` is duplicated from the package
+    body onto its own column specifically so `replay()`'s re-
+    authorization check (a caller's ceiling vs. the package's own recorded
+    ceiling) doesn't require deserializing the body first."""
+
+    __tablename__ = "sealed_package"
+
+    package_id: Mapped[str] = mapped_column(String, primary_key=True)
+    content_hash: Mapped[str] = mapped_column(String, index=True)
+    principal_subject: Mapped[str] = mapped_column(String)
+    max_classification: Mapped[list] = mapped_column(JSON)
+    body: Mapped[dict] = mapped_column(JSON)
+    sealed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

@@ -1,20 +1,26 @@
-"""PQ Desk agent — a reduced but real slice (kickoff prompt §4.2). Only
-imports bhumi.broker.mcp_client, never storage/knowledge/broker-internals
-directly (enforced by tests/test_agents_use_broker_only.py) — every
-BEDROCK call is a real MCP protocol round-trip over stdio to a subprocess
-server, not an in-process Python function call.
+"""BEDROCK TEST HARNESS — NOT THE REAL PQ DESK SERVICE.
 
-Deferred, stated plainly: real classification (Starred/Unstarred/Short
-Notice) is a fixed stub, not a rule/LLM call. Hindi output, annexures,
-and supplementaries are not built. None of these add new architectural
-risk if deferred — the point of this reduced slice is the evidence chain
-and the persona boundary, not full-format PQ replies.
+This module exists to exercise BEDROCK's MCP tool surface with realistic
+call patterns: question decomposition, evidence sealing under different
+personas, coverage checks, computed figures, narrative drafting, the
+Proof Gate, and provenance resolution.
+
+It is deliberately thin. It does not represent the real PQ Desk product,
+which will be designed and built as its own dedicated phase after the
+data layer and BEDROCK are complete (addon 3, 2026-09-06). Do not add
+product features here (Hindi output, Note for Supplementaries, annexure
+export, formatting) — if a BEDROCK capability needs a new kind of test to
+prove it works, add the test; don't grow this into a service. Only
+imports `bhumi.broker.mcp_client`, never storage/knowledge/broker-
+internals directly (enforced by tests/test_agents_use_broker_only.py) —
+every BEDROCK call is a real MCP protocol round-trip over stdio to a
+subprocess server, not an in-process Python function call.
 """
 from __future__ import annotations
 
 import hashlib
 
-from bhumi.broker.mcp_client import Role, compute_metric, record_answer, seal_evidence_package
+from bhumi.broker.mcp_client import Role, compute_metric, get_provenance, record_answer, seal_evidence_package
 from bhumi.models.backends.select import get_entailment_checker, get_narrative_generator
 
 
@@ -43,6 +49,11 @@ def answer_question(question: str, metric_key: str, entity_id: str | None = None
         return {"package_id": pkg["package_id"], "classification": classification_stub, "answer": None,
                 "gap": f"metric {metric_key} covered in general but not for entity {entity_id}"}
 
+    # 6a. Provenance — real MCP round-trip, proves the figure's chain
+    # resolves all the way to a real source cell/bbox, not just to a
+    # fact row (kickoff addon 3 §3.1 step 7)
+    provenance_chain = get_provenance("fact", figures[0]["figure_id"], role, env_overrides=env_overrides)
+
     # 6. Narrate
     sentences = get_narrative_generator().draft(question, figures)
 
@@ -60,5 +71,5 @@ def answer_question(question: str, metric_key: str, entity_id: str | None = None
     return {
         "package_id": pkg["package_id"], "answer_id": answer_id, "classification": classification_stub,
         "answer": answer_text,
-        "figures": figures, "gap": None,
+        "figures": figures, "gap": None, "provenance_chain": provenance_chain,
     }

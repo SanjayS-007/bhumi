@@ -158,13 +158,50 @@ reasons (`NOT_DIGITISED`/`NO_SOURCE`/`NOT_VALIDATED: <gate> — <reason>`).
 zero contradictions — expected at this corpus size, not a sign the
 detector doesn't work).
 
-**Still NOT built**: SSE/HTTP MCP transport (documented upgrade path
-only), MCP connection pooling (fine at this call volume), the full
-`serve` self-healing sequence beyond doctor+migrate+launch, resource-
-budget admission check, the base design's full demand-vs-provable
-coverage matview (Phase 6.5). Full detail: `SESSION_REPORT.md`'s newest
-addendum, `PROVENANCE.md`'s newest sections. 75 tests pass, 2 correctly
-auto-skipped (no CUDA; no GROQ_API_KEY).
+**The `serve` self-healing sequence and resource-budget admission check
+are now real**: `task serve` runs doctor -> migrate -> `fetch_models` ->
+a real resource-budget check (`runtime/resources.py` + `config/
+resources.yaml`) -> UI, all in one step-by-step orchestrated flow with
+progress printed; every step past migrate is best-effort (never blocks
+the UI from starting) since nothing in this codebase auto-loads a heavy
+model at serve-time on the sqlite profile yet — there's nothing for
+either step to actually gate, but both are real and tested, ready the
+moment that changes.
+
+**BEDROCK's agents were relabeled as test harnesses, not products**
+(`tests/bedrock_harness/{pq_client,report_client}.py`, moved out of
+`src/bhumi/agents/` per an explicit later instruction — PQ Desk/Report
+Engine get their own dedicated design session later, on purpose). BEDROCK
+itself was hardened instead: real audit logging (every allow/deny
+decision), four personas (`public_caller`/`internal_reviewer`/
+`cmpdi_geologist`/`subsidiary_officer(doc_ids)` — the last one's
+`entity_scope` is a real, tested access dimension beyond classification),
+persisted sealed packages with real `merge_packages`/`replay` (replay
+correctly refuses a public persona reading a restricted package — the
+adversarial cache-correctness case), and 3 more real tools
+(`list_review_queue`, `list_geological_tables`, `get_conformance_report`).
+The retrieval ablation gained a real `+azure_rerank` stage; re-run on the
+grown 3-document corpus, hit@5 honestly *dropped* at two stages (a real
+corpus-size effect, not a regression — see PROVENANCE.md). CI now exists
+(`.github/workflows/ci.yml`) — closes build-order step 12.
+
+**§0, answered plainly**: the workstation transition (real GPU, Postgres,
+the SQLite-vs-Postgres diff) has **not** happened and cannot happen from
+this environment — no access to that hardware exists here. The code's
+portability design is real; verification on real hardware is not, and
+the two claims are kept distinct rather than blurred.
+
+**Still NOT built**: SSE/HTTP MCP transport and connection pooling
+(deliberately — they solve remote/multi-process access to BEDROCK, a
+problem that doesn't exist until PQ Desk/Report Engine become real,
+separately-running services), the base design's full demand-vs-provable
+coverage matview (Phase 6.5), Topic Intelligence (Lens 1/3/4), Hindi
+output, Note for Supplementaries, a Report Engine approval step — the
+last four explicitly overridden out of scope by the same session's later
+instruction (see PROVENANCE.md). Full detail: `SESSION_REPORT.md`'s
+newest addendum, `PROVENANCE.md`'s newest sections. 87 tests pass, 2
+correctly auto-skipped (no CUDA; no GROQ_API_KEY). CI now runs this on
+every push (`.github/workflows/ci.yml`).
 
 Prior status (MVP-0/1/2, steps 1–9 of the build order, step 12/CI not
 started):

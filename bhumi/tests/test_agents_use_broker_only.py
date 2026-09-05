@@ -1,17 +1,19 @@
-"""Static proof that neither agent bypasses BEDROCK's real MCP protocol
-boundary (kickoff prompt §4.4, hardened by the later MCP-server kickoff's
-§2.3): parse each agent module's own import statements and assert
-`bhumi.storage` / `bhumi.knowledge` never appear, and that the *only*
-`bhumi.broker` submodule ever imported is `bhumi.broker.mcp_client` — not
-`bhumi.broker.server`/`authz`/`package`, which would be an in-process
-shortcut around the protocol boundary the agents are supposed to cross
-for real."""
+"""Static proof that neither BEDROCK test-harness client bypasses
+BEDROCK's real MCP protocol boundary (kickoff prompt §4.4, hardened by
+the MCP-server kickoff's §2.3, re-verified after addon 3's move of these
+modules out of src/bhumi/agents/ into tests/bedrock_harness/ — moving
+"product-shaped" code into a clearly-labelled harness path doesn't mean
+the import discipline gets to slip): parse each harness module's own
+import statements and assert `bhumi.storage` / `bhumi.knowledge` never
+appear, and that the *only* `bhumi.broker` submodule ever imported is
+`bhumi.broker.mcp_client` — not `bhumi.broker.server`/`authz`/`package`,
+which would be an in-process shortcut around the protocol boundary."""
 import ast
 from pathlib import Path
 
 AGENT_FILES = [
-    Path(__file__).resolve().parents[1] / "src" / "bhumi" / "agents" / "pq_desk.py",
-    Path(__file__).resolve().parents[1] / "src" / "bhumi" / "agents" / "report_engine.py",
+    Path(__file__).resolve().parent / "bedrock_harness" / "pq_client.py",
+    Path(__file__).resolve().parent / "bedrock_harness" / "report_client.py",
 ]
 
 
