@@ -36,27 +36,48 @@ uv run task models
 ```
 
 ```
-┌────────────┬─────────┬──────────────┬────────────────────────┐
-│ capability │ backend │ model        │ reason                 │
-├────────────┼─────────┼──────────────┼────────────────────────┤
-│ rerank     │ azure   │ gpt-5.2-chat │ default: auto-cascade  │
-│ entailment │ azure   │ gpt-5.2-chat │ default: auto-cascade  │
-│ narrative  │ azure   │ gpt-5.2-chat │ default: auto-cascade  │
-└────────────┴─────────┴──────────────┴────────────────────────┘
+┌────────────┬─────────┬───────────────────────┬────────────────────────┐
+│ capability │ backend │ model                 │ reason                 │
+├────────────┼─────────┼───────────────────────┼────────────────────────┤
+│ rerank     │ groq    │ llama-3.1-8b-instant  │ default: auto-cascade  │
+│ entailment │ groq    │ llama-3.1-8b-instant  │ default: auto-cascade  │
+│ narrative  │ groq    │ llama-3.1-8b-instant  │ default: auto-cascade  │
+└────────────┴─────────┴───────────────────────┴────────────────────────┘
 ```
 
 `BHUMI_MODEL_BACKEND` sets the default for all three (`auto` cascades
-Azure → Gemini → Groq → deterministic, skipping anything unconfigured).
+**Groq → Gemini → deterministic**, skipping anything unconfigured).
 `BHUMI_BACKEND_NARRATIVE` / `BHUMI_BACKEND_ENTAILMENT` / `BHUMI_BACKEND_RERANK`
 override one capability at a time, e.g. `BHUMI_BACKEND_NARRATIVE=gemini`.
 `deterministic` / `local` / `none` disables API calls entirely. Every
 non-deterministic backend falls back automatically per call if it errors
 (bad key, quota, network) — see `src/bhumi/models/backends/select.py`.
 
-The Gemini key configured this session does not work — not a code bug:
-a raw `curl` with zero SDK involved gets `401 ACCESS_TOKEN_TYPE_UNSUPPORTED`
-from Google's own server on every call including `ListModels`, matching a
-known Google-side issue with `AQ.`-prefixed AI Studio keys (see
-`PROVENANCE.md`, 2026-09-05). Groq works in code but has no key configured
-here. Azure is the only backend with a real, currently-working credential
-on this machine, so it's first in the auto-cascade.
+**Azure is deliberately NOT in the default auto-cascade** — it only works
+with an org account this repo won't have on a clone. It's still in the
+codebase and selectable, but only by explicit override:
+`BHUMI_MODEL_BACKEND=azure` or `BHUMI_BACKEND_NARRATIVE=azure`, etc.
+
+**Groq supports multiple free-tier keys, round-robin, to stretch the free
+quota**: set `GROQ_API_KEYS=key_one,key_two,...` (comma-separated) instead
+of a single `GROQ_API_KEY` — every call advances to the next key, and a
+real rate-limit (429) response retries once against a different key
+before giving up. Add or remove keys any time, no code change.
+
+**Current real status of each cloud backend, verified, not assumed**:
+- **Groq**: real, capability-gated code, round-robin key rotation
+  implemented and unit-verified. Not network-verified on the machine that
+  built this — this org's Zscaler web proxy blocks `api.groq.com`
+  outright (confirmed via a raw `curl`: `"Not allowed to browse
+  Generative AI and ML Applications category"`, and independently via
+  the actual SDK call: `openai.APIConnectionError`). Should work as-is on
+  a network that doesn't block it, e.g. a personal laptop.
+- **Gemini**: confirmed broken by Google, not by this code — a raw
+  `curl` with zero SDK involved gets `401 ACCESS_TOKEN_TYPE_UNSUPPORTED`
+  on every call including `ListModels`, matching a known, currently-open
+  Google-side issue with `AQ.`-prefixed AI Studio keys (see
+  `PROVENANCE.md`, 2026-09-05). Try a freshly-generated key if you hit
+  this — some accounts still issue the older, working `AIzaSy...` format.
+- **Azure**: the only backend that has produced a real, verified model
+  response on this machine — but requires org access most clones won't
+  have, so it's excluded from the default cascade on purpose.

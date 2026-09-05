@@ -24,19 +24,38 @@ Run `uv run task models` to see exactly which backend and model name was
 resolved for each capability, and why — this is the single place to look
 instead of re-deriving it from env vars by hand.
 
-`_BACKENDS` order = Azure OpenAI > Gemini > Groq. Azure is first because
-it's the only credential this session that has actually produced a real
-model response (a live `gpt-5.2-chat` completion, verified 2026-09-06).
-The Gemini key provided this session is malformed — verified two
-independent ways against Google's live server with zero SDK involved:
-`?key=` query param and `x-goog-api-key` header both return
-`401 ACCESS_TOKEN_TYPE_UNSUPPORTED` (see PROVENANCE.md) — kept in the
-chain regardless, since a corrected key needs no code change to start
-working. Groq has no key configured this session; its backend is real,
-capability-gated code that has never been executed (same honesty pattern
-as Tier 3's GPU gate). Claude is deliberately never in `_BACKENDS` — the
-user's Anthropic access is org-restricted this session; the Claude
-backend classes remain in the codebase for whenever that changes.
+**`_BACKENDS` is the full lookup table (all three, so an explicit
+`BHUMI_MODEL_BACKEND=azure`/`BHUMI_BACKEND_<X>=azure` still works), but
+the "auto" cascade is a SEPARATE, shorter list: `AUTO_CASCADE = ("groq",
+"gemini")`.** Azure is deliberately excluded from the auto default per
+Addon 5's local-first/no-Azure-by-default correction — real bug in the
+previous version of this file, found by direct user challenge, not by
+inspection: the first cut only had one list (`_BACKENDS`, Azure-first)
+and used it for both explicit lookup and the "auto" default, so on this
+org laptop (the only backend with a currently-working credential is
+Azure) every capability silently defaulted to Azure with reason
+"default: auto-cascade" — exactly the org-only dependency Addon 5 said
+not to leave in place, and exactly what would break on a clone to a
+machine with no Azure access. Fixed by splitting the two lists: `auto`
+now only ever walks Groq then Gemini (falling back to deterministic),
+and Azure is reachable only by explicit name — `task models` proves
+this: unset env vars now resolve to `groq`/`gemini`/`deterministic`,
+never `azure`, unless `BHUMI_MODEL_BACKEND=azure` or
+`BHUMI_BACKEND_<X>=azure` is set on purpose.
+
+Gemini's key is currently rejected by Google itself — verified via a raw
+`curl` with zero SDK involved (`401 ACCESS_TOKEN_TYPE_UNSUPPORTED` on
+every operation including a bare `ListModels`), root-caused to a known
+Google-side bug with `AQ.`-prefixed AI Studio keys (see PROVENANCE.md,
+2026-09-05) — kept in `AUTO_CASCADE` regardless, since a corrected key
+needs no code change to start working. Groq has no key configured on
+this machine; its backend is real, capability-gated code that has never
+been executed here (same honesty pattern as Tier 3's GPU gate) — it is
+first in `AUTO_CASCADE`, not last, precisely because it's the one real
+chance of a working cloud path once a key is provided. Claude is
+deliberately never in `_BACKENDS` — the user's Anthropic access is
+org-restricted this session; the Claude backend classes remain in the
+codebase for whenever that changes.
 
 Every backend call is wrapped with a per-call fallback to the next one
 down the chain, not just a presence check — a configured credential can
@@ -62,11 +81,23 @@ from bhumi.models.protocols import EntailmentChecker, NarrativeGenerator, Rerank
 log = structlog.get_logger()
 
 # name -> (api_key_configured, RerankerCls, EntailmentCls, NarrativeCls)
+# Full lookup table -- used for an EXPLICIT BHUMI_MODEL_BACKEND=<name> /
+# BHUMI_BACKEND_<CAPABILITY>=<name>. Azure is here so it still works as a
+# deliberate manual override, but is NOT in AUTO_CASCADE below.
 _BACKENDS = [
     ("azure", azure.api_key_configured, azure.AzureOpenAIRerankerBackend, azure.AzureOpenAIEntailmentBackend, azure.AzureOpenAINarrativeBackend),
     ("gemini", gemini.api_key_configured, gemini.GeminiRerankerBackend, gemini.GeminiEntailmentBackend, gemini.GeminiNarrativeBackend),
     ("groq", groq.api_key_configured, groq.GroqRerankerBackend, groq.GroqEntailmentBackend, groq.GroqNarrativeBackend),
 ]
+_BACKENDS_BY_NAME = {b[0]: b for b in _BACKENDS}
+
+# What "auto" (the default, no BHUMI_MODEL_BACKEND/BHUMI_BACKEND_<X> set)
+# actually walks, in order. Azure is deliberately excluded -- it only
+# works on the org-account laptop and must never be a silent default a
+# clone onto a different machine (e.g. no Azure access) quietly relies
+# on. Local-first per Addon 5 once a real local backend exists; today
+# that's Groq then Gemini, both usable from a personal free-tier key.
+AUTO_CASCADE = ("groq", "gemini")
 
 
 class _FallbackWrapper:
@@ -112,8 +143,10 @@ def _selected_backends(capability: str = "narrative") -> list[tuple]:
     if forced in ("deterministic", "local", "none"):
         return []
     if forced in ("", "auto"):
-        return [b for b in _BACKENDS if b[1]()]
-    return [b for b in _BACKENDS if b[0] == forced]
+        return [_BACKENDS_BY_NAME[name] for name in AUTO_CASCADE if _BACKENDS_BY_NAME[name][1]()]
+    if forced not in _BACKENDS_BY_NAME:
+        return []
+    return [_BACKENDS_BY_NAME[forced]]
 
 
 def _build_chain(capability: str, deterministic):
