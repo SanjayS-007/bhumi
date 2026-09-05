@@ -1,0 +1,40 @@
+# Real-document corpus manifest (kickoff §3.3). `task ingest -- --manifest
+# data/corpus.yaml` reproduces this corpus from a clean `data/` directory
+# in one command, idempotently — re-running does no redundant work (each
+# entry is skipped once its DocumentAst already exists).
+#
+# `source_url: null` is an honest gap, not an omission: the format-spec
+# document (NMET-FORMAT-G4-G3-G2) was acquired manually in an earlier
+# session and its original acquisition URL was never recorded. It cannot
+# be reproduced from a clean data/ directory by this manifest alone --
+# only re-registered if already present in this machine's data/vault/.
+documents:
+  - doc_id: GR-MARWATOLA-I-II-G2
+    title: "Final Geological Report on General Exploration for Coal in Marwatola Sector-I & II Block, Sohagpur Coalfield"
+    publisher: CMPDI
+    doc_kind: geological_report
+    authority_rank: 2
+    stage: G2
+    coalfield: Sohagpur
+    classification: restricted
+    source_url: "https://nmet.gov.in/upload/uploadfiles/files/MARWATOLA_I&II_G2.pdf"
+    page_range: "14-19"
+
+  - doc_id: NMET-FORMAT-G4-G3-G2
+    title: "Report format for mineral resources of G4/G3/G2 stage investigation"
+    publisher: MOC
+    doc_kind: format_spec
+    authority_rank: 3
+    classification: public
+    source_url: null
+    page_range: null
+
+  - doc_id: NMET-DPR-SHANTIPARA-LIMESTONE-G3
+    title: "Detailed Proposal for Preliminary Exploration (G3 Stage) at Shantipara B Limestone Block, Junagadh District, Gujarat"
+    publisher: MAPL
+    doc_kind: exploration_proposal
+    authority_rank: 4
+    stage: G3
+    classification: public
+    source_url: "https://nmet.gov.in/upload/project_registration/699.pdf"
+    page_range: "1-22"

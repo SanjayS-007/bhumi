@@ -6,7 +6,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOOLS = {"search_evidence", "get_fact", "compute_metric", "get_provenance", "check_coverage", "seal_evidence_package"}
+TOOLS = {
+    "search_evidence", "get_fact", "compute_metric", "get_provenance", "check_coverage",
+    "seal_evidence_package", "record_answer", "get_trace_graph", "revision_impact",
+}
 
 
 @dataclass(frozen=True)

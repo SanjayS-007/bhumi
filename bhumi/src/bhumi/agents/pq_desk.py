@@ -12,7 +12,9 @@ and the persona boundary, not full-format PQ replies.
 """
 from __future__ import annotations
 
-from bhumi.broker.mcp_client import Role, compute_metric, seal_evidence_package
+import hashlib
+
+from bhumi.broker.mcp_client import Role, compute_metric, record_answer, seal_evidence_package
 from bhumi.models.backends.select import get_entailment_checker, get_narrative_generator
 
 
@@ -48,8 +50,15 @@ def answer_question(question: str, metric_key: str, entity_id: str | None = None
     evidence = [{"raw_text": f"{f['metric_key']} {f['value']} {f.get('unit', '')}"} for f in figures]
     gated = [(s, get_entailment_checker().check(s.text, evidence)) for s in sentences]
 
+    answer_text = " ".join(s.text for s, v in gated if v.entailed)
+    # every produced answer is a lineage node too (kickoff §4.2), linked
+    # to the package it consumed — enables forward trace from a fact all
+    # the way to a real agent answer, not just to a sealed package
+    answer_id = f"ANS-{hashlib.sha256((pkg['package_id'] + answer_text).encode()).hexdigest()[:12]}"
+    record_answer(answer_id, pkg["package_id"], role, env_overrides=env_overrides)
+
     return {
-        "package_id": pkg["package_id"], "classification": classification_stub,
-        "answer": " ".join(s.text for s, v in gated if v.entailed),
+        "package_id": pkg["package_id"], "answer_id": answer_id, "classification": classification_stub,
+        "answer": answer_text,
         "figures": figures, "gap": None,
     }

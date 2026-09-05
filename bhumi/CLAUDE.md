@@ -125,14 +125,45 @@ concurrent-isolation test passes (two real subprocess MCP sessions,
 different personas, verified never to see each other's evidence) — the
 first point in the project where that class of bug could even exist to
 be caught. `bedrock://meta/tools` is a real MCP resource, versioned.
-**Still NOT built**: SSE/HTTP transport (documented upgrade path, config
-value, not implemented), a third real document, partial-failure
-ingestion resilience, forward Revision Impact Trace, Trace Explorer UI,
-administrative graph seeding, `derived`-trust-layer enforcement test,
-`check_coverage` gate-failure reasons, `published_statement` schema, the
-full `serve` self-healing sequence beyond doctor+migrate+launch, resource-
-budget admission check. Full detail: `SESSION_REPORT.md`'s newest
-addendum, `PROVENANCE.md`'s newest sections. 58 tests pass, 2 correctly
+
+**Ingestion is hardened**: a third, structurally different real document
+(`NMET-DPR-SHANTIPARA-LIMESTONE-G3`, limestone exploration proposal, not
+coal geology) ingests cleanly with all 20 tables correctly falling
+through to `UNTYPED` rather than being force-fit. One malformed page can
+no longer abort a whole document's read pipeline
+(`read/pipeline.py::_process_page`, real fault-injection test). `data/
+corpus.yaml` + `task ingest -- --manifest` reproduces the corpus
+idempotently, one bad document never aborting the batch. `--resume` was
+deliberately not built (the atomic-commit design has nothing partial to
+resume from; a plain re-run is already correct).
+
+**Bidirectional trace is complete**: forward Revision Impact Trace
+(`knowledge/lineage.py::trace_forward`/`revision_impact`) classifies a
+hypothetical fact revision unchanged/immaterial/material against a
+stated tolerance and finds every real downstream consumer, verified
+against a real published fact and a real PQ-Desk-produced answer. Every
+sealed package and agent answer is now a lineage node (3 new BEDROCK
+tools: `record_answer`, `get_trace_graph`, `revision_impact`). Trace
+Explorer (`ui/pages/5_trace_explorer.py`, page 6) renders the full chain
+from any node to a real source cell — screenshotted live, no exception.
+
+**Graph completion**: the real, publicly-verifiable Ministry of Coal ->
+CIL -> CMPDI hierarchy is seeded and linked only to the one document
+whose publisher is unambiguously CMPDI (no relationship invented for the
+other two). `derived`-trust-layer exclusion is proven by construction
+(a real inserted derived edge is structurally unreachable through a
+trust-filtered traversal). `check_coverage` returns real gate-failure
+reasons (`NOT_DIGITISED`/`NO_SOURCE`/`NOT_VALIDATED: <gate> — <reason>`).
+`published_statement` exists and is honestly populated (11 real rows,
+zero contradictions — expected at this corpus size, not a sign the
+detector doesn't work).
+
+**Still NOT built**: SSE/HTTP MCP transport (documented upgrade path
+only), MCP connection pooling (fine at this call volume), the full
+`serve` self-healing sequence beyond doctor+migrate+launch, resource-
+budget admission check, the base design's full demand-vs-provable
+coverage matview (Phase 6.5). Full detail: `SESSION_REPORT.md`'s newest
+addendum, `PROVENANCE.md`'s newest sections. 75 tests pass, 2 correctly
 auto-skipped (no CUDA; no GROQ_API_KEY).
 
 Prior status (MVP-0/1/2, steps 1–9 of the build order, step 12/CI not

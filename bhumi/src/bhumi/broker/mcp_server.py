@@ -52,6 +52,9 @@ _TOOL_SCHEMAS = {
     "get_provenance": {"kind": _STR, "node_id": _STR},
     "check_coverage": {"metric_key": _STR, "entity_id": _STR},
     "seal_evidence_package": {"intent": _STR, "query": _STR, "metric_keys": _STR_LIST},
+    "record_answer": {"answer_id": _STR, "package_id": _STR},
+    "get_trace_graph": {"kind": _STR, "node_id": _STR},
+    "revision_impact": {"fact_id": _STR, "new_value": _STR, "tolerance": _STR},
 }
 
 
@@ -111,6 +114,13 @@ def build_server() -> Server:
                     arguments.get("query"), arguments.get("metric_keys"),
                 )
                 result = pkg.to_dict()
+            elif name == "record_answer":
+                impl.record_answer(session, principal, arguments["answer_id"], arguments["package_id"])
+                result = {"ok": True}
+            elif name == "get_trace_graph":
+                result = impl.get_trace_graph(session, principal, arguments["kind"], arguments["node_id"])
+            elif name == "revision_impact":
+                result = impl.revision_impact(session, principal, arguments["fact_id"], arguments["new_value"], arguments.get("tolerance", "0.01"))
             else:
                 raise AccessDenied(f"no such BEDROCK tool: {name}")
         except AccessDenied as e:

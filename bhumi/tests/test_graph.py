@@ -9,7 +9,7 @@ from bhumi.acquire.registry import register_local_file
 from bhumi.assay.pipeline import run_assay
 from bhumi.config.settings import Settings
 from bhumi.domain.pack_loader import load_default_pack
-from bhumi.knowledge.graph import multi_hop, neighbours, rebuild_graph_for_doc
+from bhumi.knowledge.graph import multi_hop, neighbours, rebuild_graph_for_doc, seed_administrative_hierarchy
 from bhumi.read.pipeline import run_read_pipeline
 from bhumi.storage.db.engine import migrate
 from bhumi.storage.db.models import DocumentAst, GraphEdge, GraphNode
@@ -96,3 +96,38 @@ def test_neighbours_of_a_seam_includes_its_borehole(tmp_path):
         seam = session.query(GraphNode).filter_by(label="Seam").first()
         edges = neighbours(session, seam.node_id, rel="INTERSECTS")
         assert edges
+
+
+def test_administrative_hierarchy_links_only_the_cmpdi_document(tmp_path):
+    """kickoff §5.1: only CMPDI (a publicly, unambiguously verifiable CIL
+    subsidiary) gets linked into a real hierarchy — no relationship is
+    invented for publishers this session didn't independently verify."""
+    engine = _build(tmp_path)
+    with Session(engine) as session:
+        result = seed_administrative_hierarchy(session)
+        assert result["linked_documents"] == ["GRAPH-TEST"]  # the sample doc's publisher is CMPDI
+        edge = session.query(GraphEdge).filter_by(src="document:GRAPH-TEST", rel="PUBLISHED_BY").one()
+        assert edge.dst == "org:cmpdi"
+        assert session.query(GraphEdge).filter_by(src="org:cmpdi", dst="org:cil").one().rel == "SUBSIDIARY_OF"
+
+
+def test_derived_edges_never_appear_in_a_trust_filtered_traversal(tmp_path):
+    """kickoff §5.2: the derived-trust enforcement guarantee, proven by
+    construction with a real (test-only) derived edge inserted directly —
+    zero derived edges exist in production data this session, but the
+    filter mechanism itself must be verified BEFORE Topic Radar ever
+    writes a real one."""
+    engine = _build(tmp_path)
+    with Session(engine) as session:
+        seam = session.query(GraphNode).filter_by(label="Seam").first()
+        # a fabricated derived edge to a node that exists nowhere else —
+        # reachable ONLY through this one derived-trust edge
+        session.add(GraphNode(node_id="topic:fake_similarity_cluster", label="Topic", graph="documentary", props={}))
+        session.add(GraphEdge(src=seam.node_id, dst="topic:fake_similarity_cluster", rel="SIMILAR_TO", trust_layer="derived", props={}))
+        session.commit()
+
+        paths_all = multi_hop(session, seam.node_id, rels=["SIMILAR_TO"], max_hops=2, trust_layers=["authoritative", "validated", "derived"])
+        assert any(p[-1] == "topic:fake_similarity_cluster" for p in paths_all)  # the mechanism itself works when allowed
+
+        paths_trusted_only = multi_hop(session, seam.node_id, rels=["SIMILAR_TO"], max_hops=2, trust_layers=["authoritative", "validated"])
+        assert not any(p[-1] == "topic:fake_similarity_cluster" for p in paths_trusted_only)

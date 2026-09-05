@@ -73,3 +73,15 @@ def compute_metric(metric_key: str, role: Role, entity_id: str | None = None, en
 
 def check_coverage(metric_key: str, role: Role, entity_id: str | None = None, env_overrides: dict | None = None) -> dict:
     return call_tool("check_coverage", {"metric_key": metric_key, "entity_id": entity_id}, role, env_overrides)
+
+
+def record_answer(answer_id: str, package_id: str, role: Role, env_overrides: dict | None = None) -> dict:
+    return call_tool("record_answer", {"answer_id": answer_id, "package_id": package_id}, role, env_overrides)
+
+
+def get_trace_graph(kind: str, node_id: str, role: Role, env_overrides: dict | None = None) -> dict:
+    return call_tool("get_trace_graph", {"kind": kind, "node_id": node_id}, role, env_overrides)
+
+
+def revision_impact(fact_id: str, new_value: str, role: Role, tolerance: str = "0.01", env_overrides: dict | None = None) -> dict:
+    return call_tool("revision_impact", {"fact_id": fact_id, "new_value": new_value, "tolerance": tolerance}, role, env_overrides)

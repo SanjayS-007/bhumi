@@ -153,6 +153,28 @@ class Fact(Base):
     confidence: Mapped[float] = mapped_column(Float)
 
 
+class PublishedStatement(Base):
+    """One row per real published Fact, denormalized by (metric_key,
+    entity_id, period) across documents (design doc's contradiction-
+    detection substrate, kickoff §5.4) — schema exists and is honestly
+    populated from real Facts; Topic Radar's actual contradiction
+    detection over this table is future work, not built this session.
+    """
+
+    __tablename__ = "published_statement"
+
+    statement_id: Mapped[str] = mapped_column(String, primary_key=True)
+    fact_id: Mapped[str] = mapped_column(String, index=True)
+    doc_id: Mapped[str] = mapped_column(String, index=True)
+    metric_key: Mapped[str] = mapped_column(String, index=True)
+    entity_id: Mapped[str] = mapped_column(String, index=True)
+    period: Mapped[str] = mapped_column(String)
+    qualifiers: Mapped[dict] = mapped_column(JSON, default=dict)
+    value: Mapped[object] = mapped_column(DecimalString)
+    unit: Mapped[str] = mapped_column(String)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class GraphNode(Base):
     """SQL-adjacency graph (design doc Phase 5.3) — the sqlite/workstation
     profile's graph backend per storage/interfaces.py::GraphStore; no

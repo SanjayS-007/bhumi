@@ -85,6 +85,7 @@ def ingest(
     sample: bool = typer.Option(False, "--sample"),
     doc_id: str = typer.Option(None),
     pages: str = typer.Option(None, "--pages", help="1-indexed inclusive range, e.g. '14-19'"),
+    manifest: str = typer.Option(None, "--manifest", help="path to a corpus.yaml manifest — batch-reproduce the real corpus idempotently"),
 ):
     """Run the READ pipeline over registered docs, or synthesize + ingest the sample doc."""
     from bhumi.acquire.registry import register_local_file
@@ -92,6 +93,14 @@ def ingest(
 
     settings = get_settings()
     engine = db_migrate(settings)
+
+    if manifest:
+        from bhumi.acquire.manifest import run_manifest
+
+        with Session(engine) as session:
+            results = run_manifest(session, settings, Path(manifest))
+        console.print(f"manifest run: {results}")
+        return
 
     if sample:
         from scripts.make_sample_pdf import make_sample_pdf
@@ -205,6 +214,20 @@ def graph_rebuild(doc_id: str = typer.Option(..., "--doc-id")):
     with Session(engine) as session:
         counts = rebuild_graph_for_doc(session, doc_id)
     console.print(f"[green]graph rebuilt[/green] {counts}")
+
+
+@graph_app.command("seed-admin")
+def graph_seed_admin():
+    """Hand-seed the real, publicly-verifiable administrative hierarchy
+    (Ministry of Coal -> CIL -> CMPDI) and link it to any CMPDI-published
+    document already in the graph."""
+    from bhumi.knowledge.graph import seed_administrative_hierarchy
+
+    settings = get_settings()
+    engine = db_migrate(settings)
+    with Session(engine) as session:
+        result = seed_administrative_hierarchy(session)
+    console.print(f"[green]administrative hierarchy seeded[/green] {result}")
 
 
 @app.command()

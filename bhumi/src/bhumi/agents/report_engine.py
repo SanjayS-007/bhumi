@@ -6,9 +6,10 @@ kickoff prompt.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
-from bhumi.broker.mcp_client import Role, compute_metric, seal_evidence_package
+from bhumi.broker.mcp_client import Role, compute_metric, record_answer, seal_evidence_package
 from bhumi.models.backends.select import get_entailment_checker, get_narrative_generator
 
 
@@ -27,7 +28,7 @@ def generate_report(title: str, sections: list[SectionSpec], *, role: Role = "in
     for spec in sections:
         coverage = pkg["coverage"].get(spec.metric_key, {})
         if not coverage.get("covered"):
-            rendered_sections.append({"title": spec.title, "text": f"*{spec.title}: no published data available — gap declared, not filled.*", "gap": True})
+            rendered_sections.append({"title": spec.title, "text": f"*{spec.title}: no published data available — gap declared, not filled.*", "gap": True, "answer_id": None})
             continue
         figures = compute_metric(spec.metric_key, role, spec.entity_id, env_overrides=env_overrides)
         sentences = get_narrative_generator().draft(spec.title, figures)
@@ -35,7 +36,15 @@ def generate_report(title: str, sections: list[SectionSpec], *, role: Role = "in
         gated_text = " ".join(
             s.text for s in sentences if get_entailment_checker().check(s.text, evidence).entailed
         )
-        rendered_sections.append({"title": spec.title, "text": gated_text or f"*{spec.title}: drafted sentence failed the proof gate.*", "gap": not gated_text})
+        section_text = gated_text or f"*{spec.title}: drafted sentence failed the proof gate.*"
+        section_id = None
+        if gated_text:
+            # a covered, gate-passed section is a lineage node too (§4.2)
+            # — a declared gap has no evidence to link, so no node is
+            # written for it (nothing to trace forward from)
+            section_id = f"ANS-{hashlib.sha256((pkg['package_id'] + section_text).encode()).hexdigest()[:12]}"
+            record_answer(section_id, pkg["package_id"], role, env_overrides=env_overrides)
+        rendered_sections.append({"title": spec.title, "text": section_text, "gap": not gated_text, "answer_id": section_id})
 
     body = f"# {title}\n\n" + "\n\n".join(f"## {s['title']}\n{s['text']}" for s in rendered_sections)
     return {"package_id": pkg["package_id"], "markdown": body, "sections": rendered_sections}
