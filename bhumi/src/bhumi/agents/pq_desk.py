@@ -1,6 +1,8 @@
 """PQ Desk agent — a reduced but real slice (kickoff prompt §4.2). Only
-imports bhumi.broker.client, never storage/knowledge directly (enforced
-by tests/test_agents_use_broker_only.py).
+imports bhumi.broker.mcp_client, never storage/knowledge/broker-internals
+directly (enforced by tests/test_agents_use_broker_only.py) — every
+BEDROCK call is a real MCP protocol round-trip over stdio to a subprocess
+server, not an in-process Python function call.
 
 Deferred, stated plainly: real classification (Starred/Unstarred/Short
 Notice) is a fixed stub, not a rule/LLM call. Hindi output, annexures,
@@ -10,15 +12,11 @@ and the persona boundary, not full-format PQ replies.
 """
 from __future__ import annotations
 
-import sqlite3
-
-from sqlalchemy.orm import Session
-
-from bhumi.broker.client import Principal, compute_metric, seal_evidence_package
+from bhumi.broker.mcp_client import Role, compute_metric, seal_evidence_package
 from bhumi.models.backends.select import get_entailment_checker, get_narrative_generator
 
 
-def answer_question(session: Session, raw_conn: sqlite3.Connection, principal: Principal, question: str, metric_key: str, entity_id: str | None = None) -> dict:
+def answer_question(question: str, metric_key: str, entity_id: str | None = None, *, role: Role = "internal", env_overrides: dict | None = None) -> dict:
     # 1. Classify — stubbed, deferred (see module docstring)
     classification_stub = "Starred"
 
@@ -27,20 +25,20 @@ def answer_question(session: Session, raw_conn: sqlite3.Connection, principal: P
     # for this reduced slice, and inventing a fake decomposition step would
     # add complexity without adding a real capability).
 
-    # 3. Seal + 4. Coverage
-    pkg = seal_evidence_package(session, raw_conn, principal, intent=question, metric_keys=[metric_key])
-    coverage = pkg.coverage.get(metric_key, {})
+    # 3. Seal + 4. Coverage — real MCP round-trip
+    pkg = seal_evidence_package(question, role, metric_keys=[metric_key], env_overrides=env_overrides)
+    coverage = pkg["coverage"].get(metric_key, {})
 
     if not coverage.get("covered"):
         return {
-            "package_id": pkg.package_id, "classification": classification_stub,
+            "package_id": pkg["package_id"], "classification": classification_stub,
             "answer": None, "gap": f"No published fact for {metric_key}" + (f" / {entity_id}" if entity_id else ""),
         }
 
-    # 5. Compute (already inside pkg.facts via seal)
-    figures = compute_metric(session, principal, metric_key, entity_id)
+    # 5. Compute (already inside pkg["facts"] via seal) — real MCP round-trip
+    figures = compute_metric(metric_key, role, entity_id, env_overrides=env_overrides)
     if not figures:
-        return {"package_id": pkg.package_id, "classification": classification_stub, "answer": None,
+        return {"package_id": pkg["package_id"], "classification": classification_stub, "answer": None,
                 "gap": f"metric {metric_key} covered in general but not for entity {entity_id}"}
 
     # 6. Narrate
@@ -51,7 +49,7 @@ def answer_question(session: Session, raw_conn: sqlite3.Connection, principal: P
     gated = [(s, get_entailment_checker().check(s.text, evidence)) for s in sentences]
 
     return {
-        "package_id": pkg.package_id, "classification": classification_stub,
+        "package_id": pkg["package_id"], "classification": classification_stub,
         "answer": " ".join(s.text for s, v in gated if v.entailed),
         "figures": figures, "gap": None,
     }

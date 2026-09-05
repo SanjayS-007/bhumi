@@ -1,6 +1,11 @@
-"""Static proof that neither agent bypasses BEDROCK (kickoff prompt
-§4.4): parse each agent module's own import statements and assert
-`bhumi.storage` / `bhumi.knowledge` never appear, only `bhumi.broker`."""
+"""Static proof that neither agent bypasses BEDROCK's real MCP protocol
+boundary (kickoff prompt §4.4, hardened by the later MCP-server kickoff's
+§2.3): parse each agent module's own import statements and assert
+`bhumi.storage` / `bhumi.knowledge` never appear, and that the *only*
+`bhumi.broker` submodule ever imported is `bhumi.broker.mcp_client` — not
+`bhumi.broker.server`/`authz`/`package`, which would be an in-process
+shortcut around the protocol boundary the agents are supposed to cross
+for real."""
 import ast
 from pathlib import Path
 
@@ -26,4 +31,7 @@ def test_agents_never_import_storage_or_knowledge_directly():
         modules = _imported_modules(path)
         forbidden = [m for m in modules if m.startswith("bhumi.storage") or m.startswith("bhumi.knowledge")]
         assert not forbidden, f"{path.name} imports {forbidden} directly, bypassing the broker"
-        assert any(m.startswith("bhumi.broker") for m in modules), f"{path.name} doesn't go through the broker at all"
+        broker_imports = [m for m in modules if m.startswith("bhumi.broker")]
+        assert broker_imports, f"{path.name} doesn't go through the broker at all"
+        non_client = [m for m in broker_imports if m != "bhumi.broker.mcp_client"]
+        assert not non_client, f"{path.name} imports {non_client} directly — must cross the real MCP protocol boundary via mcp_client only"

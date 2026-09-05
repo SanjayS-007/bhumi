@@ -18,20 +18,35 @@ storage/text/fts5.py), so multi-word queries only hit if the words are
 adjacent in that order in the indexed text. Not a bug in the ablation —
 same behaviour production search has.
 
-Real result (11 hand-written questions, k=5, data/bhumi.db this session):
-  lexical            6/11 (0.55)
-  +contextual_prefix 11/11 (1.00)
-  +parent_expansion  11/11 (1.00)
-Finding, not expected going in: contextual-prefix alone already reaches
-1.00 here because `chunking.py` puts a table's column headers into every
-ROW chunk's own `context_prefix` (not just the parent's) - so for this
-corpus, prefix already carries the header context that parent-expansion
-was designed to supply. Parent-expansion's value in this codebase is
-therefore not "higher hit-rate on this question set" but the structural
-guarantee (verified in tests/test_retrieval.py) that a row's *canonical*
-header attribution always resolves to its real parent, not to whatever
-happened to rank in the top-k of a header-bearing chunk elsewhere in the
-corpus - plus the FK path that write_edge() lineage relies on.
+Real result, ORIGINAL 11-question set (k=5): lexical 0.55 -> +prefix 1.00
+-> +parent_expansion 1.00. That double-1.00 was interrogated once before
+being trusted (kickoff §1.1), not taken at face value: the 11 questions
+had low internal diversity (three of them queried the literal token
+"SOIL" against the same underlying retrieval event). 5 harder questions
+were added — two exact hyphenated borehole/seam IDs, two exact numeric
+values, one genuinely unanswerable question with "correct answer is zero
+hits" as the assertion — for 16 total.
+
+Real result, EXPANDED 16-question set (k=5):
+  lexical            11/16 (0.69)
+  +contextual_prefix 16/16 (1.00)
+  +parent_expansion  15/16 (0.94)
+The ceiling broke, and the miss is a genuine, informative finding, not
+noise: query "CSM I&II-06" (an exact borehole ID) hits correctly at the
++contextual_prefix stage (the ROW's own indexed_text contains it) but
+misses at +parent_expansion **because this ablation's parent_expansion
+check only inspects the parent's text, discarding the row's own text** —
+which is exactly where that specific ID lives; the parent only has
+column headers, never row-specific identifiers. This is a real structural
+trade-off (parent-expansion trades away row-specific content for header
+context), but it is NOT a production bug: `knowledge/retrieval.py::
+search_evidence()` returns BOTH `raw_text` (the row's own) AND
+`parent_text` (the parent's) in every result — production never discards
+the child's own content, only this ablation's simplified single-field
+check does. Left as-is rather than "fixed" to hide the miss, because the
+miss is the useful signal: it's proof the double-1.00 wasn't just an
+artifact of an undiscriminating question set, and it documents precisely
+what parent-expansion does and doesn't give you.
 """
 from __future__ import annotations
 
@@ -73,6 +88,20 @@ QUESTIONS = [
     ("SOIL", "ROOF DEPTH", "row has numbers only; column header 'ROOF DEPTH' is in the parent table header"),
     ("SOIL", "THICKNESS", "row lacks the word THICKNESS; parent table header names the column"),
     ("Parting", "FRL", "row is numeric; FRL column label only in parent header"),
+    # --- §1.1 hardening: exact hyphenated borehole/seam identifier match
+    #     (a different retrieval event than any "SOIL" question above,
+    #     and exercises the FTS5 phrase-quoting fix for "-" tokens) ---
+    ("MSM-27", "MSM-27", "exact hyphenated borehole ID, only in one row's raw_text"),
+    ("CSM I&II-06", "CSM I&II-06", "exact hyphenated seam/borehole ID, appears in the row grid"),
+    # --- exact-number match: a specific measured value, not a category
+    #     word — a different failure mode than a category/header token ---
+    ("120.10", "120.10", "one specific measured thickness value, not a header or category word"),
+    ("42.63", "42.63", "another specific measured value, different row than the one above"),
+    # --- genuinely unanswerable: correct behaviour is zero hits, not a
+    #     wrong best-effort match. "stripping_ratio" isn't in either real
+    #     document (confirmed separately in tests/test_agents.py's
+    #     declares-a-gap case) ---
+    ("stripping ratio", None, "not present in either real document — correct answer is zero hits, not a guess"),
 ]
 
 
@@ -112,14 +141,20 @@ def run() -> dict:
                     # only raw_text was ever indexed here, so raw_text is
                     # also the only place a hit could legitimately show up
                     chunk_ids = _search_lexical_only(mem_conn, query, K)
-                    hit = any(expected in session.get(Chunk, cid).raw_text for cid in chunk_ids)
                 elif stage == "+contextual_prefix":
-                    # indexed_text (prefix+raw_text) is both what's searched
-                    # and what's available to answer from at this stage
                     chunk_ids = [cid for cid, _ in fts5_search(raw_conn, query, K)]
-                    hit = any(expected in session.get(Chunk, cid).indexed_text for cid in chunk_ids)
                 else:  # +parent_expansion
                     chunk_ids = [cid for cid, _ in fts5_search(raw_conn, query, K)]
+
+                if expected is None:
+                    # unanswerable question: correct behaviour is that
+                    # NOTHING comes back, not a wrong best-effort hit
+                    hit = len(chunk_ids) == 0
+                elif stage == "lexical":
+                    hit = any(expected in session.get(Chunk, cid).raw_text for cid in chunk_ids)
+                elif stage == "+contextual_prefix":
+                    hit = any(expected in session.get(Chunk, cid).indexed_text for cid in chunk_ids)
+                else:  # +parent_expansion
                     texts = []
                     for cid in chunk_ids:
                         chunk = session.get(Chunk, cid)

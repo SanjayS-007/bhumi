@@ -498,3 +498,96 @@ lineage, agents, broker). `ruff check .` clean.
   opts back in per test.
 - **57 passed, 2 skipped** (GPU-gated Tier 3; the Groq live test, no key)
   after this round. `ruff check .` clean.
+
+## §1 checks + §2 real MCP server (2026-09-06, continued further still)
+
+**Scope decision, stated plainly**: the full kickoff (§2 MCP server, §3
+ingestion hardening, §4 bidirectional trace, §5 graph completion) is a
+multi-day build. This round's budget went entirely to §1 (the two
+pre-scaling checks) and §2 (explicitly "the largest piece... the
+foundation"), which is now real. §3/§4/§5 were **not started** — not
+shallowly attempted, not started at all. See "What did NOT get built"
+below for the explicit list.
+
+### §1.1 — the retrieval ablation ceiling, interrogated
+The original 11-question ablation had low diversity (3 questions queried
+the same literal token, "SOIL"). Added 5 harder questions (2 exact
+hyphenated IDs, 2 exact numeric values, 1 genuinely unanswerable
+question) for 16 total. **The ceiling broke**: lexical 0.69, +prefix
+1.00, +parent_expansion **0.94** (15/16). The miss is informative, not
+noise — an exact borehole-ID query ("CSM I&II-06") is only findable in a
+row's own text, and this ablation's parent-expansion check discards the
+row's own text in favor of the parent's (header-only) text. Production's
+`search_evidence()` doesn't have this problem — it returns both texts —
+but the ablation's simplified check does, deliberately left visible.
+Full detail in `eval/run_retrieval_ablation.py`'s docstring.
+
+### §1.2 — Claude-backend decision, made explicit
+Azure OpenAI (`gpt-5.2-chat`) is the primary backend for the rest of this
+build and the demo. Claude stays a manual-override-only path in the
+codebase; no per-task routing (e.g. "use Claude for entailment") was
+wired, because there's no Anthropic key in this environment to test that
+path with, and wiring an untestable flag would itself violate CLAUDE.md
+rule 3.
+
+### §2 — BEDROCK is now a real MCP server
+- **Transport is stdio**, chosen and implemented as a config value
+  (`BHUMI_MCP_TRANSPORT`), not hardcoded — only stdio actually exists;
+  SSE/HTTP raises `NotImplementedError` rather than silently no-opping.
+- **A real SDK surprise happened, exactly where predicted.** The `mcp`
+  package installed as **2.1.1** by default — a ground-up API rewrite
+  (FastMCP renamed `MCPServer`, the classic decorator-based `Server` API
+  gone). Pinned `mcp>=1.0,<2.0` (resolves to 1.29.1), which restored the
+  decorator API (`@server.list_tools()`, `@server.call_tool()`) the
+  kickoff's own speculative code assumed — that part turned out right.
+- **Principal resolution over stdio worked as designed on the first
+  real test** — `BHUMI_CALLER_ROLE` env var at subprocess launch, resolved
+  once at server startup, held for the connection's lifetime. The thing
+  that actually broke was unrelated: a tool-input-schema bug (see below).
+- **Real bug, not cosmetic**: every tool argument was typed JSON-schema
+  `"string"` regardless of its real type — `metric_keys` (an array), `k`
+  (an integer), and any optional arg passed as Python `None` all failed
+  the MCP SDK's own input validation before the tool body ever ran. The
+  failure mode was confusing: an `isError=True` result whose text is a
+  plain English validation message, not JSON — the client's blind
+  `json.loads()` on that text raised a bare `JSONDecodeError` with zero
+  indication of the real cause. Took a manual subprocess repro with
+  explicit `errlog` passthrough to find it. Fixed: real per-argument JSON
+  types, and the client strips `None`-valued args before sending instead
+  of passing JSON `null`.
+- **Agents are now real MCP clients.** `pq_desk.py`/`report_engine.py`
+  import only `bhumi.broker.mcp_client`; every BEDROCK call is a real
+  stdio subprocess round-trip, not a function call. The old
+  `bhumi.broker.client` in-process shortcut was deleted (dead code once
+  agents no longer used it), and the AST enforcement test was hardened to
+  forbid importing `bhumi.broker.server`/`authz`/`package` directly too,
+  not just storage/knowledge.
+- **The multi-client isolation test (§2.4) passes**: two concurrent MCP
+  sessions (`public`, `internal`), launched together via
+  `asyncio.gather` against the same restricted document, see identical
+  tool lists (both personas share the same scope today) but different
+  evidence — internal's `search_evidence` returns real passages from the
+  restricted document, public's returns none. This is the first point in
+  the project where that class of bug (session state leaking across
+  callers) could even exist to be tested — the in-process design had no
+  session boundary for it to leak across.
+- **`bedrock://meta/tools` resource is real**, not a comment — returns
+  `{"version": "1.0.0", "tools": [...]}`, sourced from `authz.TOOLS` so it
+  can't drift from what the server actually serves.
+- **Verified, not promised**: BEDROCK's tool surface is versioned and the
+  transport is a config value. Adding a future Ask/Topic-Radar/standalone
+  Report-Engine service means writing a new MCP client against the
+  existing 6-tool contract — no broker-side change is anticipated. This
+  is a measured fact about the code that exists right now.
+
+### What did NOT get built this round (explicit, not silent)
+- §3 (a third real document, partial-failure resilience, manifest-driven
+  batch ingest) — not started.
+- §4 (forward Revision Impact Trace, lineage nodes for sealed packages
+  and agent answers, Trace Explorer UI) — not started.
+- §5 (administrative graph seeding, `derived`-trust-layer enforcement
+  test, `check_coverage` gate-failure reasons, `published_statement`
+  schema) — not started.
+- One subprocess per MCP call is simple but not fast — no connection
+  pooling exists. Not a problem yet at 2 documents/2 agents; would be the
+  first thing to fix before any larger corpus or higher call volume.

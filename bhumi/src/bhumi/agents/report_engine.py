@@ -1,15 +1,14 @@
 """Report Engine agent — a reduced but real slice (kickoff prompt §4.3).
-Only imports bhumi.broker.client. Human-approval workflow is deferred —
-noted as not risky to defer, per the kickoff prompt.
+Only imports bhumi.broker.mcp_client — every BEDROCK call is a real MCP
+protocol round-trip over stdio, not an in-process function call. Human-
+approval workflow is deferred — noted as not risky to defer, per the
+kickoff prompt.
 """
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 
-from sqlalchemy.orm import Session
-
-from bhumi.broker.client import Principal, compute_metric, seal_evidence_package
+from bhumi.broker.mcp_client import Role, compute_metric, seal_evidence_package
 from bhumi.models.backends.select import get_entailment_checker, get_narrative_generator
 
 
@@ -20,17 +19,17 @@ class SectionSpec:
     entity_id: str | None = None
 
 
-def generate_report(session: Session, raw_conn: sqlite3.Connection, principal: Principal, title: str, sections: list[SectionSpec]) -> dict:
+def generate_report(title: str, sections: list[SectionSpec], *, role: Role = "internal", env_overrides: dict | None = None) -> dict:
     metric_keys = [s.metric_key for s in sections]
-    pkg = seal_evidence_package(session, raw_conn, principal, intent=title, metric_keys=metric_keys)
+    pkg = seal_evidence_package(title, role, metric_keys=metric_keys, env_overrides=env_overrides)
 
     rendered_sections = []
     for spec in sections:
-        coverage = pkg.coverage.get(spec.metric_key, {})
+        coverage = pkg["coverage"].get(spec.metric_key, {})
         if not coverage.get("covered"):
             rendered_sections.append({"title": spec.title, "text": f"*{spec.title}: no published data available — gap declared, not filled.*", "gap": True})
             continue
-        figures = compute_metric(session, principal, spec.metric_key, spec.entity_id)
+        figures = compute_metric(spec.metric_key, role, spec.entity_id, env_overrides=env_overrides)
         sentences = get_narrative_generator().draft(spec.title, figures)
         evidence = [{"raw_text": f"{f['metric_key']} {f['value']} {f.get('unit', '')}"} for f in figures]
         gated_text = " ".join(
@@ -39,4 +38,4 @@ def generate_report(session: Session, raw_conn: sqlite3.Connection, principal: P
         rendered_sections.append({"title": spec.title, "text": gated_text or f"*{spec.title}: drafted sentence failed the proof gate.*", "gap": not gated_text})
 
     body = f"# {title}\n\n" + "\n\n".join(f"## {s['title']}\n{s['text']}" for s in rendered_sections)
-    return {"package_id": pkg.package_id, "markdown": body, "sections": rendered_sections}
+    return {"package_id": pkg["package_id"], "markdown": body, "sections": rendered_sections}

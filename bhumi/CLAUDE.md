@@ -112,11 +112,28 @@ unexecuted. Claude remains real but **never auto-selected** — the user's
 plan is org-restricted. The general test suite forces the deterministic
 backend (conftest autouse) so `pytest` stays free/offline/fast; live
 backends are exercised only by `tests/test_live_backends.py`, opt-in per
-test. **Still NOT built**: the full `serve` self-healing sequence beyond
-doctor+migrate+launch (already sufficient for a demo, verified working),
-resource-budget admission check. Full detail: `SESSION_REPORT.md`'s
-newest addendum, `PROVENANCE.md`'s newest three sections. 57 tests pass,
-2 correctly auto-skipped (no CUDA; no GROQ_API_KEY).
+test.
+
+**BEDROCK is now a real MCP server** (`bhumi/broker/mcp_server.py`, stdio
+transport, `mcp>=1.0,<2.0` — the 2.x SDK is a from-scratch API rewrite,
+pinned below it deliberately), not just an in-process Python API. Both
+agents (`pq_desk.py`, `report_engine.py`) are real MCP clients
+(`bhumi/broker/mcp_client.py` is their only sanctioned import — enforced
+by an AST check that now also forbids `broker.server`/`authz`/`package`
+direct imports, not just storage/knowledge). A genuine multi-client
+concurrent-isolation test passes (two real subprocess MCP sessions,
+different personas, verified never to see each other's evidence) — the
+first point in the project where that class of bug could even exist to
+be caught. `bedrock://meta/tools` is a real MCP resource, versioned.
+**Still NOT built**: SSE/HTTP transport (documented upgrade path, config
+value, not implemented), a third real document, partial-failure
+ingestion resilience, forward Revision Impact Trace, Trace Explorer UI,
+administrative graph seeding, `derived`-trust-layer enforcement test,
+`check_coverage` gate-failure reasons, `published_statement` schema, the
+full `serve` self-healing sequence beyond doctor+migrate+launch, resource-
+budget admission check. Full detail: `SESSION_REPORT.md`'s newest
+addendum, `PROVENANCE.md`'s newest sections. 58 tests pass, 2 correctly
+auto-skipped (no CUDA; no GROQ_API_KEY).
 
 Prior status (MVP-0/1/2, steps 1–9 of the build order, step 12/CI not
 started):

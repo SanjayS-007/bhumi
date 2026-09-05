@@ -1,10 +1,10 @@
 {
   "k": 5,
-  "n_questions": 11,
+  "n_questions": 16,
   "stages": {
     "lexical": {
-      "hits": 6,
-      "hit_at_5": 0.5454545454545454,
+      "hits": 11,
+      "hit_at_5": 0.6875,
       "questions": [
         {
           "query": "SOIL",
@@ -71,11 +71,41 @@
           "expected": "FRL",
           "why": "row is numeric; FRL column label only in parent header",
           "hit": false
+        },
+        {
+          "query": "MSM-27",
+          "expected": "MSM-27",
+          "why": "exact hyphenated borehole ID, only in one row's raw_text",
+          "hit": true
+        },
+        {
+          "query": "CSM I&II-06",
+          "expected": "CSM I&II-06",
+          "why": "exact hyphenated seam/borehole ID, appears in the row grid",
+          "hit": true
+        },
+        {
+          "query": "120.10",
+          "expected": "120.10",
+          "why": "one specific measured thickness value, not a header or category word",
+          "hit": true
+        },
+        {
+          "query": "42.63",
+          "expected": "42.63",
+          "why": "another specific measured value, different row than the one above",
+          "hit": true
+        },
+        {
+          "query": "stripping ratio",
+          "expected": null,
+          "why": "not present in either real document \u2014 correct answer is zero hits, not a guess",
+          "hit": true
         }
       ]
     },
     "+contextual_prefix": {
-      "hits": 11,
+      "hits": 16,
       "hit_at_5": 1.0,
       "questions": [
         {
@@ -142,13 +172,43 @@
           "query": "Parting",
           "expected": "FRL",
           "why": "row is numeric; FRL column label only in parent header",
+          "hit": true
+        },
+        {
+          "query": "MSM-27",
+          "expected": "MSM-27",
+          "why": "exact hyphenated borehole ID, only in one row's raw_text",
+          "hit": true
+        },
+        {
+          "query": "CSM I&II-06",
+          "expected": "CSM I&II-06",
+          "why": "exact hyphenated seam/borehole ID, appears in the row grid",
+          "hit": true
+        },
+        {
+          "query": "120.10",
+          "expected": "120.10",
+          "why": "one specific measured thickness value, not a header or category word",
+          "hit": true
+        },
+        {
+          "query": "42.63",
+          "expected": "42.63",
+          "why": "another specific measured value, different row than the one above",
+          "hit": true
+        },
+        {
+          "query": "stripping ratio",
+          "expected": null,
+          "why": "not present in either real document \u2014 correct answer is zero hits, not a guess",
           "hit": true
         }
       ]
     },
     "+parent_expansion": {
-      "hits": 11,
-      "hit_at_5": 1.0,
+      "hits": 15,
+      "hit_at_5": 0.9375,
       "questions": [
         {
           "query": "SOIL",
@@ -214,6 +274,36 @@
           "query": "Parting",
           "expected": "FRL",
           "why": "row is numeric; FRL column label only in parent header",
+          "hit": true
+        },
+        {
+          "query": "MSM-27",
+          "expected": "MSM-27",
+          "why": "exact hyphenated borehole ID, only in one row's raw_text",
+          "hit": true
+        },
+        {
+          "query": "CSM I&II-06",
+          "expected": "CSM I&II-06",
+          "why": "exact hyphenated seam/borehole ID, appears in the row grid",
+          "hit": false
+        },
+        {
+          "query": "120.10",
+          "expected": "120.10",
+          "why": "one specific measured thickness value, not a header or category word",
+          "hit": true
+        },
+        {
+          "query": "42.63",
+          "expected": "42.63",
+          "why": "another specific measured value, different row than the one above",
+          "hit": true
+        },
+        {
+          "query": "stripping ratio",
+          "expected": null,
+          "why": "not present in either real document \u2014 correct answer is zero hits, not a guess",
           "hit": true
         }
       ]
