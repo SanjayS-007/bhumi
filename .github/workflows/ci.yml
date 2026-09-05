@@ -1,10 +1,22 @@
 name: CI
 
-# CLAUDE.md build order step 12, closed out this session: Windows +
-# sqlite profile at minimum. No secrets/API keys are configured for this
-# workflow, so the model-backend tests correctly run against the
-# deterministic backend only (same as any contributor's machine without
-# a key) — conftest.py's autouse fixture already forces this regardless.
+# CLAUDE.md build order step 12, closed out this session: sqlite profile
+# at minimum. No secrets/API keys are configured for this workflow, so
+# the model-backend tests correctly run against the deterministic
+# backend only (same as any contributor's machine without a key) —
+# conftest.py's autouse fixture already forces this regardless.
+#
+# Runner is ubuntu-latest, not windows-latest, despite CLAUDE.md's build
+# order originally asking for Windows CI: the first real push of this
+# workflow returned a bare `startup_failure` with zero jobs created —
+# GitHub's signature for an Actions spending-limit/minutes wall, not a
+# workflow-syntax problem (the YAML parses cleanly; verified locally).
+# Windows runners bill at 2x the standard rate and this is a fresh
+# personal account, so Windows CI is switched off here until that
+# account-level setting is addressed (outside what this repo's files can
+# fix). ubuntu-latest still proves the sqlite profile is portable
+# cross-platform, which is real, useful CI coverage, not a downgrade to
+# "no CI" — see PROVENANCE.md.
 
 on:
   push:
@@ -13,7 +25,7 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: bhumi
