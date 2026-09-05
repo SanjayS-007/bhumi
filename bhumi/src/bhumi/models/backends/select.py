@@ -3,13 +3,26 @@ retrieval) asks for `get_reranker()` etc. and never checks which provider
 or API key is configured itself. This is what makes the backend-swap
 test meaningful: swap here, nothing else changes.
 
-Backend choice is env-driven (`BHUMI_MODEL_BACKEND`), not hardcoded:
+Backend choice is env-driven, not hardcoded, at two levels:
+  - `BHUMI_MODEL_BACKEND` — the default for every capability.
+  - `BHUMI_BACKEND_NARRATIVE` / `BHUMI_BACKEND_ENTAILMENT` / `BHUMI_BACKEND_RERANK`
+    — an optional per-capability override, checked first. Set
+    `BHUMI_BACKEND_NARRATIVE=gemini` to force narrative drafting onto
+    Gemini while everything else still follows `BHUMI_MODEL_BACKEND`.
+    This is the whole mechanism — no code change is needed to move one
+    capability to a different provider, only an env var.
+
+Each of those variables accepts:
   - unset / "auto" (default): try each backend in `_BACKENDS` order,
     skipping any whose required env vars aren't set, falling back to the
     deterministic backend at the end of the chain.
   - a specific name ("azure" | "gemini" | "groq"): use only that backend
     (still falling back to deterministic if the call itself fails).
   - "deterministic" / "local" / "none": deterministic only, no API calls.
+
+Run `uv run task models` to see exactly which backend and model name was
+resolved for each capability, and why — this is the single place to look
+instead of re-deriving it from env vars by hand.
 
 `_BACKENDS` order = Azure OpenAI > Gemini > Groq. Azure is first because
 it's the only credential this session that has actually produced a real
@@ -78,8 +91,24 @@ class _FallbackWrapper:
         return call
 
 
-def _selected_backends() -> list[tuple]:
-    forced = os.environ.get("BHUMI_MODEL_BACKEND", "auto").lower()
+# capability name -> (cls_index into _BACKENDS' tuple, Protocol method name)
+CAPABILITIES = {
+    "rerank": (0, "rerank"),
+    "entailment": (1, "check"),
+    "narrative": (2, "draft"),
+}
+
+
+def _capability_env(capability: str) -> str:
+    """Per-capability override (`BHUMI_BACKEND_NARRATIVE` etc.) wins over
+    the global `BHUMI_MODEL_BACKEND` default — this is the whole
+    "narrative for fact -> gemini_key" mechanism, entirely env-driven."""
+    per_capability = os.environ.get(f"BHUMI_BACKEND_{capability.upper()}")
+    return (per_capability or os.environ.get("BHUMI_MODEL_BACKEND", "auto")).lower()
+
+
+def _selected_backends(capability: str = "narrative") -> list[tuple]:
+    forced = _capability_env(capability)
     if forced in ("deterministic", "local", "none"):
         return []
     if forced in ("", "auto"):
@@ -87,26 +116,46 @@ def _selected_backends() -> list[tuple]:
     return [b for b in _BACKENDS if b[0] == forced]
 
 
-def _build_chain(cls_index: int, method: str, deterministic):
+def _build_chain(capability: str, deterministic):
+    cls_index, method = CAPABILITIES[capability]
     chain = deterministic
-    for _name, _configured, *classes in reversed(_selected_backends()):
+    for _name, _configured, *classes in reversed(_selected_backends(capability)):
         chain = _FallbackWrapper(classes[cls_index](), chain, method)
     return chain
 
 
 def get_reranker() -> Reranker:
-    return _build_chain(0, "rerank", DeterministicRerankerBackend())
+    return _build_chain("rerank", DeterministicRerankerBackend())
 
 
 def get_entailment_checker() -> EntailmentChecker:
-    return _build_chain(1, "check", DeterministicEntailmentBackend())
+    return _build_chain("entailment", DeterministicEntailmentBackend())
 
 
 def get_narrative_generator() -> NarrativeGenerator:
-    return _build_chain(2, "draft", DeterministicNarrativeBackend())
+    return _build_chain("narrative", DeterministicNarrativeBackend())
 
 
 def api_key_configured() -> bool:
     """Kept for tests/backwards-compat: is any real (non-deterministic)
     backend currently selectable given BHUMI_MODEL_BACKEND and env vars?"""
     return bool(_selected_backends())
+
+
+def resolve(capability: str) -> dict:
+    """What `task models` prints: which backend (and model name) actually
+    wins for this capability right now, and why — the single source of
+    truth instead of re-deriving it from env vars by hand."""
+    forced = _capability_env(capability)
+    per_capability_var = f"BHUMI_BACKEND_{capability.upper()}"
+    reason = (
+        f"{per_capability_var}={forced}" if os.environ.get(per_capability_var)
+        else f"BHUMI_MODEL_BACKEND={forced}" if os.environ.get("BHUMI_MODEL_BACKEND")
+        else "default: auto-cascade"
+    )
+    chosen = _selected_backends(capability)
+    if not chosen:
+        return {"capability": capability, "backend": "deterministic", "model": "(no API, rule-based)", "reason": reason}
+    name, _configured, *_classes = chosen[0]
+    module = {"azure": azure, "gemini": gemini, "groq": groq}[name]
+    return {"capability": capability, "backend": name, "model": module.model_name(), "reason": reason}

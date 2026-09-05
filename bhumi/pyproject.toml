@@ -46,6 +46,7 @@ test    = { cmd = "pytest -q" }
 lint    = { cmd = "ruff check . && ruff format --check . && mypy src" }
 fmt     = { cmd = "ruff format . && ruff check --fix ." }
 profile = { cmd = "python -m bhumi.cli profile", help = "Show active profile and resolved backends" }
+models  = { cmd = "python -m bhumi.cli models", help = "Show resolved model backend + model name per capability, and why" }
 verify  = { cmd = "python -m bhumi.cli doctor --strict && pytest -q", help = "CI gate" }
 
 [tool.ruff]

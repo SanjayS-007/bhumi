@@ -8,14 +8,22 @@ client.models.list() against the live API before being hardcoded here).
 **Not executed this session past verification.** The key is real and
 reaches generativelanguage.googleapis.com (confirmed: SSL/network fine
 after the same pip-system-certs fix used for the earlier HF/Anthropic
-checks), but every call returns
-`401 UNAUTHENTICATED / API_KEY_SERVICE_BLOCKED` — Google recognizes the
-key but has the Generative Language API blocked for whatever project it
-belongs to. This looks like a Google Cloud Console key without that API
-enabled, rather than an AI Studio key (https://aistudio.google.com/apikey)
-minted directly for this API. See PROVENANCE.md 2026-09-06. The
-deterministic fallback backend is what actually executes the agents this
-session.
+checks), but every call — including a bare `ListModels`, which needs no
+model name and no request body — returns
+`401 UNAUTHENTICATED / ACCESS_TOKEN_TYPE_UNSUPPORTED` via a raw `curl`
+with zero SDK, zero app code, and no ambient `GOOGLE_*`/`GCLOUD_*`
+env vars involved (isolating test re-run 2026-09-05; ruled out
+env-var/SDK-routing causes explicitly). Root cause, confirmed against
+live reports on Google's own AI developer forum the same day: this key
+was issued in the newer `AQ.`-prefixed format, and accounts currently
+issuing `AQ.`-prefixed keys get them rejected by
+generativelanguage.googleapis.com for every operation, not just
+generateContent — a Google-side key-issuance bug affecting many
+developers this same window, not a malformed key or a bug in this file.
+Nothing in this codebase can fix it; it needs either Google's fix or a
+replacement key minted as the older `AIzaSy...` format. See
+PROVENANCE.md 2026-09-05. The deterministic fallback (or Azure/Groq,
+where configured) is what actually executes the agents until then.
 """
 from __future__ import annotations
 
@@ -43,6 +51,10 @@ class GeminiUnavailable(Exception):
 
 def api_key_configured() -> bool:
     return bool(os.environ.get("GEMINI_API_KEY"))
+
+
+def model_name() -> str:
+    return MODEL
 
 
 def _client():

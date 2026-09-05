@@ -793,3 +793,11 @@ session, then explicitly relabeled "not a product, a test harness" the
 next. That wasn't wasted work, but naming something a "test harness"
 from the very first line it's written would have made the eventual
 addon a non-event instead of a re-labeling exercise.
+
+## Addon 5 — report back
+
+- **§1.1 curl result, verbatim**: `401 UNAUTHENTICATED`, `reason: ACCESS_TOKEN_TYPE_UNSUPPORTED`, from a raw `curl` against `generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=...` — zero SDK, zero app code. Re-ran against bare `ListModels` (no model, no body) too: identical error.
+- **Root cause**: not a header/env-var/SDK-routing bug (no `GOOGLE_*`/`GCLOUD_*` env vars set; the failure is identical with zero SDK involved at all) and not a malformed/typo'd key. This session's `GEMINI_API_KEY` is issued in the newer `AQ.`-prefixed AI Studio format, and multiple independent, contemporaneous reports on Google's own AI Developer Forum (checked 2026-09-05) confirm `AQ.`-prefixed keys are currently rejected by `generativelanguage.googleapis.com` for every operation — a Google-side key-issuance bug, not something fixable in this codebase. Needs either Google's fix or a key re-minted in the older `AIzaSy...` format.
+- **`task models` output** (unset / default): all three capabilities resolve to `azure / gpt-5.2-chat`, reason `default: auto-cascade` — Azure is the only backend with a real, working credential this session. With `BHUMI_BACKEND_NARRATIVE=gemini` set, narrative alone switches to `gemini / gemini-2.5-flash-lite` (still non-functional pending the key issue above) while rerank/entailment stay on Azure — verified live.
+- **Local-first philosophy**: acknowledged as the right forward-looking design, not implemented as code — there are no local model weights or CUDA device anywhere this session has run, so there is nothing real to wire up yet without fabricating capability. `select.py`'s `_BACKENDS`/`CAPABILITIES` tables are structured so a real local backend slots in as one tuple when weights and hardware exist.
+- **README/`.env.example` rewritten and pushed** — see the commit referenced in `PROVENANCE.md`'s Addon 5 entry for the hash.

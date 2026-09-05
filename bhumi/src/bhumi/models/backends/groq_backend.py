@@ -39,6 +39,9 @@ def _model() -> str:
     return os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
 
 
+model_name = _model
+
+
 def _client():
     if not api_key_configured():
         raise GroqUnavailable("GROQ_API_KEY is not set")

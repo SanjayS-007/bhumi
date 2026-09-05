@@ -54,6 +54,23 @@ def profile():
 
 
 @app.command()
+def models():
+    """Show which model backend (and model name) is resolved for each
+    capability right now, and why — narrative/entailment/rerank are each
+    independently env-driven (BHUMI_BACKEND_<CAPABILITY>, falling back to
+    BHUMI_MODEL_BACKEND). Change an env var, re-run this, nothing else."""
+    from bhumi.models.backends.select import CAPABILITIES, resolve
+
+    t = RichTable(show_header=True)
+    for col in ("capability", "backend", "model", "reason"):
+        t.add_column(col)
+    for capability in CAPABILITIES:
+        r = resolve(capability)
+        t.add_row(r["capability"], r["backend"], r["model"] or "(unset)", r["reason"])
+    console.print(t)
+
+
+@app.command()
 def acquire(
     file: Path = typer.Option(..., "--file"),
     doc_id: str = typer.Option(...),

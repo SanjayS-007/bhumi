@@ -74,6 +74,9 @@ def _deployment() -> str:
     return os.environ.get("AZURE_OPENAI_TEXT_DEPLOYMENT") or os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "")
 
 
+model_name = _deployment
+
+
 def _log_usage(purpose: str, usage) -> None:
     USAGE_LOG.parent.mkdir(parents=True, exist_ok=True)
     with USAGE_LOG.open("a", encoding="utf-8") as f:
