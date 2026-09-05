@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from alembic import command
@@ -15,12 +16,24 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 def make_engine(settings: Settings) -> Engine:
     if settings.profile == Profile.SQLITE:
         settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-        return create_engine(f"sqlite:///{settings.sqlite_path}")
+        # timeout=30: the raw sqlite3 connection in raw_sqlite_connection()
+        # (needed for FTS5, which has no SQLAlchemy dialect support) writes
+        # to this same file — without a busy timeout on both sides, the two
+        # connections hit "database is locked" instead of just waiting.
+        return create_engine(f"sqlite:///{settings.sqlite_path}", connect_args={"timeout": 30})
     if not settings.postgres_url:
         raise RuntimeError(
             f"profile {settings.profile} requires BHUMI_POSTGRES_URL to be set"
         )
     return create_engine(settings.postgres_url.get_secret_value())
+
+
+def raw_sqlite_connection(settings: Settings) -> sqlite3.Connection:
+    """FTS5 has no SQLAlchemy dialect support — storage/text/fts5.py needs
+    the raw DBAPI connection to the same sqlite file the ORM session uses."""
+    if settings.profile != Profile.SQLITE:
+        raise RuntimeError("raw_sqlite_connection is sqlite-profile only; workstation profile needs tsvector instead")
+    return sqlite3.connect(str(settings.sqlite_path), timeout=30)
 
 
 def migrate(settings: Settings) -> Engine:

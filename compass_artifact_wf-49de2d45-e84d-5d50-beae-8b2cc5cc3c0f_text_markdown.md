@@ -1,0 +1,138 @@
+# BHUMI Technology Stack Research: Open-Source Choices for a 6GB-VRAM Coal-Sector Document Intelligence Platform
+
+## TL;DR
+- **You can build a genuinely capable, fully-local document intelligence pipeline on your RTX 4050 (6GB) laptop today.** The single most consequential finding: PaddleOCR-VL (0.9B params) scores 92.86 overall on OmniDocBench v1.5 (beating MinerU2.5-1.2B at 90.67, and outperforming GPT-4o and models ~80× its size), yet its language model at Q4_K_M is ~300MB and was merged into llama.cpp (build b8110, Feb 19 2026) — this replaces the LayoutLM approach that failed you and rivals Azure/Textract/Google Document AI on printed docs at zero per-page cost.
+- **Adopt a Postgres-centric "one database to rule them all" for the prototype** (pgvector + native full-text search + Apache AGE for graph), keep Docling's JSON as your document AST, use Splink for entity resolution, and wrap data access in a role-aware MCP server — every piece is open-source, laptop-runnable, and migrates cleanly to Oracle Cloud Always Free or Supabase.
+- **The gap versus paid cloud APIs is now small on printed text and moderate on degraded scans/handwriting** — spend your $1,500 Claude Code allowance on development and hard-pair adjudication, and reserve a thin cloud-OCR fallback only for the worst scanned pages rather than paying per-page at inference time in production.
+
+## Key Findings
+
+1. **OCR/layout — PaddleOCR-VL is the headline pick; Docling is the best "converter + AST" backbone.** PaddleOCR-VL-0.9B scores 92.86 overall on OmniDocBench v1.5 (Text-Edit 0.035, Formula-CDM 91.22, Table-TEDS 90.89) vs MinerU2.5-1.2B at 90.67; PaddleOCR-VL-1.5 later raised this to 94.50 and 1.6 to a vendor-claimed 96.33 on v1.6. Q4_K_M language-model GGUF ≈300MB. Docling (IBM, MIT license) gives you RT-DETR layout + TableFormer (TEDS >91% on FinTabNet ACCURATE mode) and, crucially, a rich JSON document model with bbox provenance — the exact thing LayoutLM did not give you.
+
+2. **Why LayoutLM failed you is structural, not a skill gap.** LayoutLM (v1/v2/v3) is a token-classification model that requires per-document-type fine-tuning on labeled data; it is not an end-to-end document converter and does not emit a provenance-rich document tree. Docling/PaddleOCR-VL are converters that work zero-shot and retain bounding-box provenance.
+
+3. **DoclingDocument is your ready-made "AST with provenance."** Its schema (texts/tables/pictures/key_value_items, DocItem base type, ProvenanceItem carrying page_no + bbox, GroupItem for structure, JSON-pointer parent/child refs) is a lossless JSON serialization. There is no formal W3C standard for "document AST with provenance"; DoclingDocument is the de-facto choice.
+
+4. **Local LLMs: the 6GB tier is real but constrained to ~3–4B models at good speed.** Phi-4-mini, Gemma small variants, Qwen 2.5/3 3–4B fit comfortably; 7B fits only at Q3/Q4 near the ceiling. MiniCheck-Flan-T5-Large (770M) reaches GPT-4 fact-checking accuracy for entailment gating and fits trivially.
+
+5. **Postgres-for-everything is viable for the prototype**, with pgvector + Apache AGE (graph/Cypher) + native FTS demonstrated together (Microsoft's Azure PostgreSQL write-up combines pgvector + AGE in one engine). Kuzu is a strong embedded graph option (374× faster than Neo4j on path queries in one benchmark).
+
+6. **A role-aware MCP "evidence broker" is architecturally sound but role-scoping is an application-layer concern.** The MCP spec (2025-06-18 revision added OAuth 2.1) covers transport auth; per-tool, per-role visibility must be implemented by you at the server boundary.
+
+7. **"OKF" is a real, current Google spec — but likely not what the team remembered.** Google Cloud published the Open Knowledge Format (OKF v0.1) in 2026 — markdown+YAML-frontmatter knowledge bundles for agents. It is unrelated to the Open Knowledge Foundation (UK nonprofit). For a Git-versioned metric rule book, Malloy (Google's actual open-source modeling language) or dbt MetricFlow are the real options.
+
+## Details
+
+### 1. Document extraction / OCR / layout on 6GB VRAM
+
+**PaddleOCR-VL (Baidu PaddlePaddle) — the strongest small model.** 0.9B params (NaViT-style dynamic-resolution vision encoder + ERNIE-4.5-0.3B LM). Per the PaddleOCR-VL paper (arXiv:2510.14528, Table 2): "our model achieves a top-ranking overall score of 92.86, surpassing the next best model, MinerU2.5-1.2B (90.67)" on OmniDocBench v1.5, ahead of dots.ocr-3B (88.41), MonkeyOCR-pro-3B (88.85). PaddleOCR-VL-1.5 later reached 94.50 (arXiv:2601.21957); 1.6 vendor claim 96.33 on v1.6. Handles 109 languages, text/tables/formulas/charts/seals. Merged into llama.cpp b8110 (Feb 19 2026); Q4_K_M LM GGUF ≈300MB — fits 6GB with enormous headroom. License: Apache 2.0. GitHub: github.com/PaddlePaddle/PaddleOCR. **This is your recommended primary OCR/parse engine.** Versus Azure AI Document Intelligence / AWS Textract / Google Document AI: it matches or exceeds them on printed-document parsing benchmarks at zero per-page cost, but lacks their managed forms/KV extraction, SLAs, and turnkey handwriting robustness.
+
+**Docling (IBM) — the converter + AST backbone.** MIT license. GitHub: github.com/docling-project/docling. Ships RT-DETR layout model (heron-101 achieves 78% mAP on DocLayNet; egret-m fastest at 0.024 s/image on A100) + TableFormer (FinTabNet TEDS >91% ACCURATE mode). Full-worker VRAM footprint ~4–6GB (layout ~1GB + TableFormer ~600MB + EasyOCR 0.5–1.5GB). Runs CPU-only at ~5–6× slower. Docling added a VLM pipeline path built on granite-docling-258M. **Recommended role:** Docling for born-digital PDFs and structure/provenance; route hard scanned pages to PaddleOCR-VL.
+
+**MinerU / MinerU2.5 (OpenDataLab).** Decoupled 1.2B VLM; OmniDocBench v1.5 overall 90.67; strongest on formulas/CJK. Accurate path needs GPU. Good accuracy leader but heavier than PaddleOCR-VL.
+
+**Marker (Datalab).** Fast Markdown-at-scale on Surya models; ~120 pages/sec on H100. **Caveat: GPL-3.0 code + RAIL-M weight license restricts commercial use above a revenue threshold — flag for a government deployment.** Surya OCR 2 runs locally on consumer GPUs via GGUF.
+
+**dots.ocr, GOT-OCR2.0, Nougat, olmOCR, docTR.** dots.ocr (3B) v1.5 overall 88.41. olmOCR 2 (Ai2) ~82.4 on olmOCR-Bench. Viable but either larger (3B) or weaker than PaddleOCR-VL at 0.9B. Nougat is academic-PDF/LaTeX focused. docTR is a lighter classical OCR toolkit.
+
+**Quantization / offload guidance.** GGUF Q4_K_M is the gold standard (≈75% memory reduction vs FP16, minimal quality loss). For OCR VLMs, keep the vision encoder on GPU and the tiny LM quantized; llama.cpp supports CPU-offload of layers when you spill. For degraded scans, a hybrid pipeline (Docling layout + PaddleOCR-VL recognition) is the recommended composition.
+
+**Benchmark gap vs cloud APIs.** On printed docs, open small models now sit at or above GPT-4o/Gemini on OmniDocBench; the remaining gap is on physical degradation (Real5-OmniDocBench: PaddleOCR-VL-1.6 93.19 overall — strong, but scanning/warping/skew still cost points) and handwriting/non-Latin scripts, where managed services and larger models retain an edge. Reserve a thin cloud fallback for the worst pages only.
+
+### 2. Document AST / JSON schema standards
+
+**DoclingDocument** (docling_core): top-level lists texts (TextItem/SectionHeaderItem/ListItem/CodeItem), tables (TableItem wrapping TableData/TableCell), pictures (PictureItem), key_value_items, form_items. Base DocItem; ProvenanceItem = "lightweight pointer back into the original document" carrying page_no + bbox (CoordOrigin), plus char ranges. GroupItem/NodeItem express hierarchy; parent/child via JSON pointers. Lossless JSON serialization; lossy Markdown/HTML export. Schema JSON: github.com/docling-project/docling-core/blob/main/docs/DoclingDocument.json. Access pattern: `result.document.tables[i].prov[0].bbox` / `.page_no`.
+
+**Comparables.** LayoutParser emits detectron2-style layout blocks; PubLayNet/DocLayNet are COCO-format annotation schemas (bbox + class), not full document trees. Microsoft leans on markdown-with-metadata. There is no formal W3C "document AST with provenance" standard — confirmed. DoclingDocument is the strongest de-facto standard.
+
+**Domain conditioning (coal/mining).** No off-the-shelf standard for "borehole log vs resource-estimate table" typing. The practical pattern: keep DoclingDocument generic, then add a domain-classification layer (a small classifier or LLM prompt) that tags TableItems/sections with domain types, stored as metadata/annotations. Hierarchical/schema-guided extraction for scientific docs is an active research area but has no turnkey mining tool — note this as a build item, not a buy item.
+
+### 3. Validation / human-in-the-loop confidence
+
+**Review-queue UX & active learning.** Label Studio (open-source; community edition struggles >~50k tasks on modest hardware; active learning not native), Argilla (integrates with ModAL for uncertainty-sampling loops), Prodigy (commercial, native model-in-the-loop active learning). Uncertainty sampling reliably beats random: one NER study cited F1 0.91 vs 0.85 for equal labeling budget. Calibration research (temperature scaling, conformal prediction) applies to turning raw scores into actionable, calibrated signals — present a calibrated confidence band plus the provenance bbox, not a bare number.
+
+**Rule engines for domain rules as data.** Great Expectations (Apache 2.0; GitHub: great-expectations/great_expectations) is powerful but widely considered heavyweight — one Endjin install pulled 107 packages, and multiple teams report abandoning it for complexity. Pydantic v2 (MIT, Rust core) is best for per-record validation but rules live in code. Cerberus (ISC License; pyeve/cerberus) expresses rules as plain dict/YAML/JSON schemas — the lightest "rules as data," zero dependencies. JSON Schema (BSD-3/AFL-3.0 spec; open standard) is fully declarative and portable but weak on cross-field arithmetic. SHACL (W3C Recommendation) is fully declarative but only for RDF graphs — overkill unless your data is RDF. Pandera (MIT; unionai-oss/pandera) validates pandas/Polars DataFrames but rules are in code. Soda Core (Apache 2.0; sodadata/soda-core) uses YAML SodaCL checks ("if you can write a SQL WHERE clause, you can start writing Soda checks") and is the best lightweight data-as-rules alternative to Great Expectations. For cross-field rules like "net thickness ≤ gross thickness" and semantic rules like "percentages must not be averaged across areas" you will need custom/cross-column checks in whichever tool. **Recommendation: Pydantic v2 for object validation + Soda Core or Cerberus for data-as-rules domain checks; skip Great Expectations and SHACL for this team size.**
+
+**Soft-rejection / appeal workflows.** Pattern: versioned candidate records with explicit states (candidate → soft-reject → appealed → confirmed) rather than hard deletes. Great Expectations/dbt tests/Deequ provide validation gating but not appeal state machines — build this as versioned append-only rows (fact table with status + reviewer + timestamp), which also gives you a full audit trail for a ministry context.
+
+### 4. Unified knowledge layer
+
+**Vector stores (local-first).** pgvector is the 2026 default for production RAG under ~1–10M vectors and the right pick if you already run Postgres (HNSW sub-5ms to 1M vectors); caveat: index rebuilds are memory-intensive. ChromaDB = fastest to a demo (single VPS 4–8GB RAM handles millions). LanceDB = best for larger-than-memory disk-based indexing and local/edge, with built-in versioning. Qdrant = best filtering/performance past 1M vectors (Rust, filters before ANN search) but adds Docker friction. sqlite-vec/DuckDB-vss = ultralight embedded. **Recommendation: pgvector** (consolidates with your Postgres) for BHUMI.
+
+**Graph DB.** Kuzu (MIT; embedded, in-process, openCypher, vector+FTS built in) — per Vela Partners' writeup of P. Rao's kuzudb-study (100K nodes, 2.4M edges): "KuzuDB runs these 374x faster than Neo4j on path queries (0.009s vs 3.22s)," ~40.8× on filtered path-finding, ~53× on ingestion; "the DuckDB of graph databases." **Project-health nuance: the original KuzuDB was archived in October 2025 and is now maintained as the Vela-Engineering/kuzu fork — verify health before committing.** Apache AGE = Postgres extension adding Cypher (keeps you single-engine). Neo4j Community = heavier server. For tens of thousands of nodes, Kuzu or Apache AGE both work; **AGE keeps your stack consolidated and is the lower-risk choice for the prototype.**
+
+**Full-text search.** Postgres native tsvector/tsquery is sufficient for a prototype and keeps you single-engine. Meilisearch/Typesense are lighter than OpenSearch/Elasticsearch and both added native hybrid (BM25+vector) search in 2025/2026. **Recommendation: start with Postgres FTS; add Meilisearch or Typesense only if hybrid relevance is inadequate.**
+
+**Contextual chunking.** Per Anthropic's engineering post "Contextual Retrieval": "Contextual Embeddings reduced the top-20-chunk retrieval failure rate by 35% (5.7% → 3.7%)... Combining Contextual Embeddings and Contextual BM25 reduced [it] by 49% (5.7% → 2.9%)"; adding reranking reaches 67% (→1.9%). One-time indexing cost is ~$1.02 per million document tokens with prompt caching. Open implementations: the LlamaIndex cookbook (developers.llamaindex.ai contextual_retrieval), Together AI's open-model line-by-line implementation, and AutoLlama (github.com/autollama/autollama). Parent-child/hierarchical: LlamaIndex HierarchicalNodeParser, LangChain parent-document retriever. Use a small local LLM (e.g., Llama 3.2 3B) + prompt caching to generate chunk context cheaply.
+
+**"Postgres for everything" verdict.** Viable and recommended for the BHUMI prototype: one Postgres with pgvector + tsvector + Apache AGE genuinely serves vector, full-text, relational, and graph needs (Microsoft's Azure PostgreSQL guide demonstrates pgvector+AGE in a single engine, combining Cypher graph traversal with vector search). Tradeoff: at scale you may split out vectors (Qdrant) or graph (Kuzu/Neo4j); plan the seam but don't pay for it early.
+
+### 5. Entity resolution & hierarchical clustering
+
+**Splink (UK Ministry of Justice, MIT).** Production-proven probabilistic record linkage (Fellegi-Sunter EM model). Per MoJ Splink docs and Linacre et al. (IJPDS), Splink links "prisons, probation, and the criminal and family courts" under ADR UK's Data First programme; NHS England reports up to ~19% linkage-quality improvement linking to the Personal Demographics Service; the MoD's Veterans' Card verifies applicants against historic records via Splink; the Australian Bureau of Statistics used it for the 2024 National Linkage Spine. Runs on a DuckDB backend locally (no Spark needed for moderate scale) — suitable for a small team. **Recommended primary ER engine.** Alternatives: dedupe.io, Zingg.
+
+**LLM-assisted ER — measured accuracy.** Peeters, Steiner & Bizer, "Entity Matching using Large Language Models" (EDBT 2025, arXiv:2310.11244): zero-shot GPT-4 "outperforms fine-tuned PLMs on 3 out of 4 e-commerce datasets" and is far more robust to unseen entities (beats the best transferred PLM by ≥8% F1; GPT-4 by 40–68% under distribution shift). Their earlier "Using ChatGPT for Entity Matching" (ADBIS 2023) found ChatGPT "reaching a zero-shot performance of 82.35% F1 on a challenging matching task on which RoBERTa requires 2000 training examples." Ditto (Li et al., PVLDB 2020, arXiv:2004.00584) — fine-tuned Transformers, "up to 29% of F1 score" over prior SOTA and 96.5% F1 on a large real-world company-matching task, but degrades 36–56% F1 under distribution shift. AnyMatch (arXiv:2409.04073) shows a small LM reaching mean F1 81.96 vs GPT-4's 86.36. **Practical read: use Splink as the deterministic/auditable backbone; use Claude (dev budget) to adjudicate hard/ambiguous pairs.** Note: the academic EM benchmarks compare LLMs against Magellan/DeepMatcher/Ditto/RoBERTa rather than Splink specifically — no head-to-head LLM-vs-Splink F1 was found.
+
+**Hierarchical clustering.** Hierarchical BERTopic (SBERT embeddings + UMAP + HDBSCAN + c-TF-IDF) is the pragmatic tool for auto-discovering nested document clusters; staged NMF→BERTopic pipelines help at scale (each document assigned to a single topic natively, with HDBSCAN soft probabilities). Leiden/Louvain community detection over your entity/document graph (in AGE/Kuzu/NetworkX) discovers clusters without a predefined hierarchy. hLDA and hyperbolic hierarchical topic models (HyHTM) exist in research. **Recommendation: manually define the top domain levels (geology/subsidiary) and let BERTopic/Leiden discover sub-clusters.**
+
+**Multi-agency government KG.** Little directly comparable published work exists on multi-agency provenance KGs of the CMPDI/GSI/IBM/NCDC/CIL/MECL type — treat this as a genuinely novel contribution. The nearest analogues are Splink's cross-justice-system linking spine and general GraphRAG-over-institutional-corpus patterns.
+
+### 6. MCP architecture for a role-aware evidence broker
+
+**Spec.** MCP exposes Resources, Tools, Prompts as first-class primitives; MCP clients enumerate capabilities and invoke tools. The 2025-06-18 spec revision added OAuth 2.1 transport auth (bearer tokens). **Critical finding: role-aware conditional exposure of tools/resources is NOT natively specified — it is an application-layer concern.** You must (a) authenticate every request, (b) map identity→role→scopes, (c) enforce at both `tools/list` (visibility) and `tools/call` (execution). Multiple 2026 practitioner sources stress designing per-tool scoping in from the start, not retrofitting middleware ("agents should see only the tools they're permitted to use, not just be blocked from calling the ones they shouldn't").
+
+**Reference patterns.** InfraCloud's Keycloak+OAuth RBAC GitHub MCP server demonstrates per-tool RBAC with viewer/user/admin roles and a `get_my_permissions` meta-tool. CodiLime's network-automation series shows JWT auth + scope-based per-tool authorization across multiple MCP servers. Cloudflare's MCP portal pattern (`default_disabled` + explicit tool allow-lists) shows role-based tool hiding at a gateway.
+
+**MCP vs REST/gRPC/GraphQL for BHUMI.** MCP's advantage is AI-nativeness: your query agent, report-generation agent, and parliamentary-reply agent are all LLM-based and can discover/use tools naturally as MCP clients against one shared server. Tradeoff: MCP auth is still underspecified, so you carry more security-correctness burden than a mature REST+OAuth stack. A plain internal REST/RPC API with field-level auth is simpler and more battle-tested but not AI-native; GraphQL with field-level authorization sits between. **Recommendation: build the evidence broker as an MCP server for the AI agents, but keep the authorization logic in a well-tested application layer — treat MCP as the interface, not the security boundary.**
+
+**Functional vs non-functional / graceful degradation.** The Spotify-offline-works vs YouTube-offline-doesn't analogy maps to graceful degradation and cache-then-serve patterns. Authoritative naming from distributed-systems/SRE literature: **circuit breaker, bulkhead, cache-aside/read-through, graceful degradation, and eventual vs strong consistency.** Design different consistency/reliability tiers per consumer: a parliamentary-reply agent needs strong-consistency, audited reads; a general query agent can tolerate cached/stale reads.
+
+### 7. Rule book / semantic layer
+
+**"OKF" clarified.** Google Cloud published the **Open Knowledge Format (OKF v0.1, 2026)** — a vendor-neutral markdown-with-YAML-frontmatter spec for LLM-readable knowledge bundles (authored by Sam McVeety & Amir Hormati, per the Google Cloud blog). This is a real Google spec and is actually a plausible fit for a Git-backed rule book of knowledge atoms. It is **unrelated to the Open Knowledge Foundation** (UK nonprofit founded 2004, behind CKAN) — the two share the abbreviation but are different entities. The team likely conflated them, or genuinely meant Google's OKF.
+
+**Semantic-layer options.** Malloy (Google, open-source modeling language created by Lloyd Tabb after Looker's acquisition) is the real "Google" association for data modeling. dbt Semantic Layer / MetricFlow (open-sourced late 2025, Apache 2.0) = Git-managed YAML metric definitions compiled to SQL across Snowflake/BigQuery/Databricks/Postgres/DuckDB. Cube Core (Apache 2.0) = headless semantic layer. LookML = powerful but Looker-locked, no open compiler. **Recommendation for a small team: a lightweight Git-versioned YAML rule book (optionally OKF-formatted bundles, or MetricFlow-style YAML) validated by Pydantic/Cerberus in CI — do not adopt a heavy framework early.**
+
+### 8. Free-tier / low-cost deployment
+
+**Oracle Cloud Always Free** was the most generous ARM tier (historically 4 Ampere A1 OCPU + 24GB RAM) but Oracle **halved Always-Free Ampere limits in mid-2026 to 2 OCPUs/12GB** (1,500 OCPU-hours + 9,000 GB-hours/month) — still viable for a Postgres-centric app but re-verify current limits, as the change was made with little announcement. **Supabase free tier**: 500MB Postgres with pgvector included (holds ~50k–80k 1,536-dim vectors), but pauses after 7 days inactivity (breaks unpredictable production traffic); Pro $25/mo removes the pause + 8GB disk. **Railway/Render/Fly.io**: one-click pgvector Postgres, container control, small always-on cost (ChromaDB/pgvector on a 4–8GB VPS runs under ~$30/mo). **Hugging Face Spaces**: host small inference endpoints. **India-specific**: MeghRaj/NIC (GI Cloud) is the government cloud; public info on hackathon/pilot availability is limited — pursue via the sponsoring ministry. **Recommendation: develop on the laptop, stage on Oracle Always Free (ARM) or a cheap Railway/Fly instance, keep Supabase Pro as the managed-Postgres option once traffic is unpredictable.**
+
+### 9. Local LLM options for 6GB VRAM
+
+- **Narrative drafting / general:** Phi-4-mini (safe/fast on 6GB), Gemma small variants, Qwen 2.5/3 3–4B (Q5_K_M is the sweet spot at 6GB), Llama 3.2 3B. A 7B Q4_K_M (~4.5GB weights + KV cache) sits right at the 6GB ceiling — usable but tight; Q3_K_M fits with noticeable quality loss. Community RTX 4050 6GB benchmarks confirm 3–4B models run well; one 20-model RTX 4050 benchmark selected a ~1.2B model (LFM2.5-1.2B) as a cheap always-on option.
+- **Indic-capable:** Sarvam-1 (2B, Apache 2.0, 10 Indic languages, best-in-class vs Gemma-2-2B/Llama-3.2-3B — but a base completion model needing fine-tuning). IndicTrans2 (AI4Bharat, Apache 2.0) for translation (22 Indian languages). Larger Sarvam 30B/105B are API-only for you (need ~8 GPUs). PARAM-1 (BharatGen 2.9B) and IBM Granite small models are alternatives.
+- **Entailment / fact-checking:** MiniCheck-Flan-T5-Large (770M) — per Tang et al. (EMNLP 2024, arXiv:2404.10774): "Our best system MiniCheck-FT5 (770M parameters) outperforms all systems of comparable size and reaches GPT-4 accuracy" at ~400× lower cost ($0.24 vs $107 on the 13K test set), on the LLM-AggreFact benchmark. Fits trivially in 6GB — **recommended for the entailment gate.** Bespoke-MiniCheck-7B is SOTA but **non-commercial license** (contact Bespoke Labs for commercial use) and needs ~7B-class resources — use the 770M model instead.
+- **Quant guidance:** Q4_K_M default; Q5_K_M when you have headroom (3–4B on 6GB); Q3_K_M only when forced. Run embeddings with a tiny model (e.g., nomic-embed-text) alongside. Expected throughput on RTX 4050 6GB: 3–4B Q4/Q5 models run at usable interactive speeds; 7B models are slower and near the memory ceiling.
+
+## Recommendations
+
+**Stage 0 — Prototype on the laptop (now):**
+1. **Ingest:** Docling (MIT) for born-digital PDFs + DoclingDocument JSON as your canonical AST. Route scanned/degraded pages to PaddleOCR-VL 0.9B (Apache 2.0) via llama.cpp. This directly replaces the failed LayoutLM approach and preserves bbox provenance.
+2. **Store:** single Postgres with pgvector + tsvector + Apache AGE. One backup/monitoring surface.
+3. **Chunk:** implement Anthropic Contextual Retrieval with a local Llama 3.2 3B + prompt caching; hybrid BM25 (Postgres FTS) + vector; add reranking to chase the 67% failure-rate reduction.
+4. **Validate:** Pydantic v2 for object validation + Soda Core/Cerberus YAML rules for domain checks ("net thickness ≤ gross thickness"). Store candidate facts as append-only versioned rows with status (candidate/soft-reject/appealed/confirmed).
+5. **Review UX:** Argilla or Label Studio with uncertainty-sampling queue; show calibrated confidence + bbox provenance.
+6. **Entity resolution:** Splink on DuckDB backend; escalate ambiguous pairs to Claude (dev budget).
+7. **Fact-gate:** MiniCheck-Flan-T5-Large 770M for entailment.
+8. **Rule book:** Git-versioned YAML (optionally OKF bundles or MetricFlow-style), validated in CI.
+9. **Serve:** MCP server as the evidence broker for your agents; authorization in a tested app layer, not relying on the MCP spec.
+
+**Benchmarks/thresholds that change the plan:**
+- If OCR accuracy on your borehole logs/geological tables is inadequate on **your own private validation set** → add MinerU2.5 or a thin cloud-OCR fallback (Azure/Textract/Google) for the worst pages only.
+- If vectors exceed ~5–10M or filtered-query latency degrades → split vectors out to Qdrant.
+- If graph traversals dominate and AGE is slow → move the KG to embedded Kuzu (verify fork health first).
+- If Postgres FTS relevance is poor → add Meilisearch/Typesense hybrid search.
+- If unpredictable production traffic → Supabase Pro ($25/mo) or Oracle Always Free ARM.
+
+**Stage 1 — Government pilot:** deploy the Postgres-centric stack to Oracle Always Free (ARM) or Railway/Fly; keep inference local/CPU where possible; pursue MeghRaj/NIC hosting through the ministry. Reserve paid cloud OCR strictly as a bounded fallback, not the default inference path.
+
+## Caveats
+- **Vendor self-reported benchmarks** (PaddleOCR-VL-1.6 96.33, MinerU README 95+) run ~2 points above independent leaderboards — reproduce numbers on your own coal documents before committing.
+- **Marker's RAIL-M weight license** restricts commercial use above a revenue threshold — avoid for a government deployment unless cleared.
+- **Bespoke-MiniCheck-7B is non-commercial** without a license; use the 770M MiniCheck instead.
+- **Kuzu project health:** the original repo was archived in October 2025; a community fork (Vela-Engineering/kuzu) maintains it — verify before adopting; Apache AGE is the lower-risk consolidated alternative.
+- **Oracle Always Free limits were cut mid-2026** (to ~2 OCPU/12GB) — re-verify current allowances.
+- **Supabase free tier pauses after 7 days idle** — unsuitable for always-on demos.
+- **6GB VRAM is a hard ceiling:** 7B models are marginal; plan around 3–4B for interactive work and keep the OCR VLM's tiny LM quantized.
+- **Multi-agency government KG is under-researched** — expect to invent patterns rather than adopt them; no LLM-vs-Splink head-to-head F1 comparison exists in the literature.
+- **Some sources are vendor/SEO blogs**; primary licenses and specs (PaddleOCR-VL/MinerU papers, Docling schema, Anthropic Contextual Retrieval post, MiniCheck EMNLP paper, Splink IJPDS paper, MoJ docs, Google Cloud OKF blog, W3C SHACL) were confirmed against primary sources. A few 2026-dated leaderboard entries reference future-sounding model names — treat marginal benchmark deltas cautiously.

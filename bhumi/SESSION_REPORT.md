@@ -346,3 +346,155 @@ oversight:**
 - My first `as_of` bitemporal test had a timing bug (added a +50ms offset
   that overshot into the next revision's validity window) — a test bug,
   not a ledger bug; fixed and re-verified.
+
+## Gemini pivot + BEDROCK + agents session (2026-09-06, continued)
+
+Closes the three items the previous section listed as "explicitly NOT
+built": passage retrieval/contextual chunking, backward lineage, and the
+retrieval ablation harness. Also stands up a minimal BEDROCK broker and
+two consuming agents. Full narrative and every non-obvious decision is in
+`PROVENANCE.md`'s two newest sections — this is the report-back summary.
+
+### §0 network re-check
+- `huggingface.co` and its mirror `hf-mirror.com` are **both** blocked at
+  the file-serving level (mirror's homepage returns 200, but the actual
+  model file request returns a filtered 403). Local embeddings remain
+  unfetchable here — unchanged conclusion from the prior session, now
+  double-checked against the mirror specifically.
+- `api.anthropic.com` is reachable (real 401, no key configured) —
+  network-open, credential-gated.
+- Mid-session the user provided a personal **Gemini** free-tier API key
+  and explicitly ruled out using Claude (org-restricted plan). The key is
+  real and recognized by Google, but every call returns `401
+  API_KEY_SERVICE_BLOCKED` — the Generative Language API isn't enabled on
+  whatever Cloud project the key belongs to. Not fixable from this side.
+
+### What actually runs today, and why
+Both the Claude backend and the Gemini backend are real, capability-gated
+implementations of the same three Protocols (`Reranker`,
+`EntailmentChecker`, `NarrativeGenerator`) — neither has executed a real
+model call this session (one for lack of a key, one for a blocked key).
+`models/backends/select.py` prefers Gemini, falls back to a deterministic
+backend (template narrative generation, literal-number presence-check
+entailment) on **any** exception from the primary call, logged and
+swallowed per-call. This means: the demo runs end-to-end today entirely on
+deterministic backends, and would start producing real Gemini output with
+zero code changes the moment the key's project-level block is lifted.
+
+### Retrieval ablation — real numbers, 11 questions, k=5
+| stage | hit@5 |
+|---|---|
+| lexical (raw_text only) | 6/11 = 0.55 |
+| +contextual_prefix (indexed_text = prefix+raw_text) | 11/11 = 1.00 |
+| +parent_expansion (row→parent table header) | 11/11 = 1.00 |
+
+Run against the two real ingested documents (`GR-MARWATOLA-I-II-G2`: 448
+chunks, `NMET-FORMAT-G4-G3-G2`: 11 chunks). Honest surprise: prefix alone
+already reaches 1.00 on this question set, because `chunking.py` puts a
+table's column headers into every row chunk's own `context_prefix`, not
+just the parent's — so parent-expansion's measured lift here is zero.
+Parent-expansion is still real and still matters (`tests/test_retrieval.py`
+proves lineage and canonical-header attribution depend on it), just not
+for *this* question set's hit-rate. 11 questions is a small, hand-written
+set for one afternoon, not a statistically powered eval — don't quote
+these numbers as more than what they are: a real, reproducible sanity
+check (`eval/run_retrieval_ablation.py`, results in
+`eval/runs/retrieval_ablation.json`).
+
+### BEDROCK broker and agents — what each can and cannot do
+- **BEDROCK** (`bhumi/broker/`): exactly 6 tools, two personas
+  (`PUBLIC_CALLER`: public only; `INTERNAL_REVIEWER`: public+restricted).
+  Classification is filtered *inside* `search_evidence`'s query loop, not
+  stripped after the fact. Verified for real: the same question against
+  the same restricted document produces two different sealed evidence
+  packages (different `content_hash`) with different passage sets, one
+  per persona.
+- **PQ Desk agent** (`agents/pq_desk.py`): can answer a question about any
+  metric that has a real published `Fact` row, with a narrative answer
+  built from real retrieved evidence and an entailment gate before
+  returning it; correctly declares a gap (returns no fabricated answer)
+  for any metric without a published fact. Cannot: read Hindi text
+  (nothing in this pipeline is language-aware), consult annexures (not
+  ingested/chunked separately), or route through a human-approval step
+  (no reviewer UI exists for agent-originated answers) — these are scope
+  cuts, not silent gaps; the module docstring says so.
+- **Report Engine agent** (`agents/report_engine.py`): assembles a
+  markdown report section-by-section; any section whose metric has no
+  published fact gets an explicit "*gap declared, not filled*" line rather
+  than being silently omitted or guessed at. Same Hindi/annexure/approval
+  limitations as PQ Desk, for the same reason (shared broker, shared
+  narrative/entailment backends).
+- **Broker-only enforcement is a static proof, not a promise**:
+  `tests/test_agents_use_broker_only.py` AST-parses both agent files' own
+  imports and fails the build if either ever imports `bhumi.storage` or
+  `bhumi.knowledge` directly.
+
+### Numbers that must NOT be quoted from this machine
+- No real Gemini/Claude token usage or cost exists — every model call this
+  session that reached a real API returned an auth/service error before
+  any tokens were billed; the demo path used the deterministic fallback.
+  `eval/runs/gemini_usage.jsonl` / `claude_usage.jsonl` are real logging
+  code paths, currently empty of successful calls.
+- The 11-question retrieval ablation is a sanity check on two specific
+  real documents, not a general recall/precision benchmark — don't
+  generalize its 1.00 hit@5 to "retrieval is solved."
+
+### Test suite
+55 passed, 1 skipped (GPU-gated Tier 3 test, correctly auto-skipped — no
+CUDA on this machine), after this session's additions (retrieval,
+lineage, agents, broker). `ruff check .` clean.
+
+### Anything that turned out wrong or needed correction mid-session
+- My first ablation script checked the wrong field for the
+  "needs-contextual-prefix" question category (compared against
+  `raw_text`, which structurally cannot contain prefix-only content) —
+  caught by inspecting the raw per-question JSON output before trusting
+  the headline number, not by the script itself failing.
+- Chunk-building for `NMET-FORMAT-G4-G3-G2` failed on the first attempt
+  because the document had been registered/vaulted in an earlier session
+  but never actually run through `ingest` — a real gap in that document's
+  pipeline state, not a chunking bug; fixed by running `ingest` for it.
+
+## Gemini claim-check + Azure OpenAI pivot (2026-09-06, continued further)
+
+- A follow-up message claimed the Gemini key's `401
+  ACCESS_TOKEN_TYPE_UNSUPPORTED` was caused by an `Authorization: Bearer`
+  header the `requests` library was supposedly injecting, and that Google
+  migrated to an `AQ.`-prefixed key format in June 2026. Both were tested
+  directly against the live API rather than accepted: confirmed `requests`
+  sends no Authorization header at all on the original call, and a fresh
+  call using exactly the recommended `x-goog-api-key` header (no
+  Authorization header, no query param) returns the identical error.
+  **The key is genuinely invalid** — this isn't an SDK or header-routing
+  issue, and no code change was made on the strength of the unverified
+  claim.
+- The user then provided a working Azure OpenAI credential. A live call to
+  the `gpt-5.2-chat` deployment succeeded, and the full BEDROCK→PQ-Desk
+  pipeline was run against real published data with `BHUMI_MODEL_BACKEND=
+  azure` — a real drafted answer, citing real fact IDs, passed the
+  entailment gate (`gap: None`). This is the first real model-generated
+  answer this session; everything before this point ran on the
+  deterministic fallback.
+- Backend selection (`models/backends/select.py`) was rewritten from a
+  hand-written two-backend cascade into a `(name, configured_check,
+  RerankerCls, EntailmentCls, NarrativeCls)` table, driven by a
+  `BHUMI_MODEL_BACKEND` env var (`auto` cascades in table order; a name
+  pins one backend; `deterministic`/`local`/`none` forces no API calls).
+  A Groq backend was added the same way (real code, `openai` SDK against
+  Groq's OpenAI-compatible endpoint, no key provided this session —
+  correctly unexecuted, `tests/test_live_backends.py` auto-skips it).
+- **Real, non-obvious bug**: `pip-system-certs` (installed earlier for
+  the HF/Gemini network checks) causes the `openai` SDK's httpx client
+  construction to recurse infinitely (`RecursionError`) via its global
+  `ssl.create_default_context` monkeypatch. Fixed by passing an explicit
+  certifi-backed `httpx.Client` to `AzureOpenAI(http_client=...)` — a
+  workaround local to that one backend module, not a global unpatch,
+  since other code paths on this network still need the OS trust store.
+- `tests/conftest.py` gained an autouse fixture forcing
+  `BHUMI_MODEL_BACKEND=deterministic` for the whole suite — without it,
+  every test that drafts a narrative or checks entailment would make a
+  real, billed Azure call on every `pytest` invocation. Live-backend
+  verification is now isolated to `tests/test_live_backends.py`, which
+  opts back in per test.
+- **57 passed, 2 skipped** (GPU-gated Tier 3; the Groq live test, no key)
+  after this round. `ruff check .` clean.

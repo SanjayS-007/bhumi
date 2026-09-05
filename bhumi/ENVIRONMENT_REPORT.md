@@ -1,5 +1,5 @@
 # BHUMI Environment Report
-Generated 2026-09-04T18:05:30+00:00 · profile `sqlite` · host LTIN708584 · platform Windows-10-10.0.26100-SP0
+Generated 2026-09-05T05:25:54+00:00 · profile `sqlite` · host LTIN708584 · platform Windows-10-10.0.26100-SP0
 
 ## Verdict
 MVP-1 runnable via Tier-1 (PyMuPDF) read path on profile `sqlite`.
@@ -14,7 +14,7 @@ MVP-1 runnable via Tier-1 (PyMuPDF) read path on profile `sqlite`.
 | admin_rights | unavailable | write denied: [Errno 13] Permission denied: 'C:\\Program Files\\bhumi_write_test.tmp' |
 | docker | unavailable | not installed |
 | long_paths | degraded | LongPathsEnabled=0 |
-| disk_space | ok | 288.8 GB free on C:\ |
+| disk_space | ok | 287.0 GB free on C:\ |
 | ram_total | ok | 16.6 GB total (workstation target 24 GB) |
 | cpu | ok | 10 physical / 12 logical cores |
 | cuda_torch | unavailable | torch not installed (gpu extra not installed) |

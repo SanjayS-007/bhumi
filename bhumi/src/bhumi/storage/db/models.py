@@ -181,6 +181,45 @@ class GraphEdge(Base):
     doc_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
 
+class Chunk(Base):
+    """Passage index (design doc Phase 5.2), scoped: parent-child from the
+    AST already produced by Phase 2, real FTS5 lexical search. No vector
+    stage this session — huggingface.co (and its mirror) are both
+    unreachable on this network, see PROVENANCE.md 2026-09-06."""
+
+    __tablename__ = "chunk"
+
+    chunk_id: Mapped[str] = mapped_column(String, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String, index=True)
+    parent_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    level: Mapped[int] = mapped_column(Integer)  # 0=parent (table/section), 1=child (row/cell-group)
+    raw_text: Mapped[str] = mapped_column(String)
+    context_prefix: Mapped[str | None] = mapped_column(String, nullable=True)
+    indexed_text: Mapped[str] = mapped_column(String)  # prefix + raw_text — what FTS5 indexes
+    source: Mapped[dict] = mapped_column(JSON)
+    candidate_id: Mapped[str | None] = mapped_column(String, nullable=True)  # for lineage, when exact
+    classification: Mapped[str] = mapped_column(String, index=True)  # inherited from source_registry
+
+
+class LineageEdge(Base):
+    """Backward-traversable provenance chain, modeled loosely on W3C PROV-O
+    (design doc Phase 5.4). claim/passage/fact -> candidate -> cell/element
+    -> artifact. Forward (revision-impact) traversal is deliberately not
+    built — no real revision history exists yet to traverse."""
+
+    __tablename__ = "lineage_edge"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_kind: Mapped[str] = mapped_column(String, index=True)  # claim|passage|fact|candidate|cell|element|artifact
+    from_id: Mapped[str] = mapped_column(String, index=True)
+    to_kind: Mapped[str] = mapped_column(String)
+    to_id: Mapped[str] = mapped_column(String)
+    activity: Mapped[str] = mapped_column(String)  # scan|read|type|assay|publish|retrieve
+    agent: Mapped[str] = mapped_column(String, default="")
+    run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ReviewQueueItem(Base):
     __tablename__ = "review_queue"
 

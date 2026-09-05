@@ -87,20 +87,36 @@ Build machine is a **locked-down Windows laptop**, verified 2026-09-04:
 11. `ui/`: corpus page → document explorer (drill-down demo) → read trace
 12. CI (Windows + sqlite profile at minimum) + keep README/PROVENANCE current
 
-Current status (2026-09-06): **MVP-0 through a scoped MVP-3 are built and
-verified.** Beyond the MVP-2 state below: both structural gaps (multi-row
-seam ranges, multi-page table continuation) are diagnosed and genuinely
-fixed against real data; classification is decided and enforced in code
-(`export/guard.py`); a bitemporal Fact Ledger and a real SQL-adjacency
-knowledge graph (3 trust-differentiated graphs, one real multi-hop query
-verified) exist with a Graph Explorer UI page (5 pages total now); profile
-auto-detection and a real (GPU-gated, unexecuted) Tier 3 implementation
-exist. **NOT built**: passage/vector retrieval, contextual chunking, the
-retrieval ablation harness, backward lineage traversal, the full `serve`
-self-healing sequence, resource-budget admission check — all explicitly
-deferred, not silently skipped. Full detail: `SESSION_REPORT.md`'s
-MVP-2.5/3 addendum, `docs/CLASSIFICATION_DECISION.md`, `PROVENANCE.md`'s
-2026-09-06 entries. 47 tests pass (1 GPU test correctly auto-skipped).
+Current status (2026-09-06, continued): all of Phase 5 that's in scope is
+now built: passage retrieval with contextual chunking (`knowledge/
+chunking.py`, `knowledge/retrieval.py`, real FTS5, classification filtered
+inside the query), backward lineage (`knowledge/lineage.py`), and a real
+retrieval ablation (`eval/run_retrieval_ablation.py` — lexical 0.55 →
++prefix 1.00 → +parent-expansion 1.00 on 11 real hand-written questions,
+see SESSION_REPORT.md for why prefix already dominates here). A minimal
+BEDROCK broker (`bhumi/broker/`, exactly 6 tools, `Principal`/`authorize()`
+classification gate, deterministically-sealed `EvidencePackage`) now
+fronts two real consuming agents (PQ Desk, Report Engine) that are
+statically proven (`tests/test_agents_use_broker_only.py`, AST-checked) to
+never import storage/knowledge directly. Model backends are now an env-driven registry
+(`models/backends/select.py`'s `_BACKENDS` table + `BHUMI_MODEL_BACKEND`
+env var: unset/`auto` cascades Azure→Gemini→Groq→deterministic; a
+specific name pins one). **Azure OpenAI is real and working** — a live
+`gpt-5.2-chat` call and a full BEDROCK→PQ-Desk pipeline run both verified
+this session (see PROVENANCE.md). Gemini's provided key is genuinely
+invalid (`ACCESS_TOKEN_TYPE_UNSUPPORTED` from Google's own server,
+verified two independent ways, including after a follow-up message
+claiming otherwise — that claim was tested and falsified, not accepted).
+Groq is real, capability-gated code with no key provided, correctly
+unexecuted. Claude remains real but **never auto-selected** — the user's
+plan is org-restricted. The general test suite forces the deterministic
+backend (conftest autouse) so `pytest` stays free/offline/fast; live
+backends are exercised only by `tests/test_live_backends.py`, opt-in per
+test. **Still NOT built**: the full `serve` self-healing sequence beyond
+doctor+migrate+launch (already sufficient for a demo, verified working),
+resource-budget admission check. Full detail: `SESSION_REPORT.md`'s
+newest addendum, `PROVENANCE.md`'s newest three sections. 57 tests pass,
+2 correctly auto-skipped (no CUDA; no GROQ_API_KEY).
 
 Prior status (MVP-0/1/2, steps 1–9 of the build order, step 12/CI not
 started):

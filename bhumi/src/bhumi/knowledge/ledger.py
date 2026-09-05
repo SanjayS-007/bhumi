@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from bhumi.knowledge.lineage import record_fact_lineage
 from bhumi.storage.db.models import CandidateFactRow, Fact
 
 
@@ -51,6 +52,8 @@ def publish_fact(session: Session, candidate: CandidateFactRow, approver: str) -
         confidence=candidate.confidence,
     )
     session.add(fact)
+    session.flush()
+    record_fact_lineage(session, fact)
     session.commit()
     return fact
 

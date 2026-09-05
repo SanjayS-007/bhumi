@@ -5,6 +5,16 @@ silently skip a test that could actually run."""
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _default_to_deterministic_backend(monkeypatch):
+    """Real API keys live in `.env` for manual/live verification (see
+    tests/test_live_backends.py), but the general suite must stay fast,
+    free, and offline per CLAUDE.md rule 7 — force the deterministic
+    backend unless a test explicitly overrides BHUMI_MODEL_BACKEND
+    itself (monkeypatch inside a test wins over this outer one)."""
+    monkeypatch.setenv("BHUMI_MODEL_BACKEND", "deterministic")
+
+
 def _cuda_available() -> bool:
     try:
         import torch  # type: ignore
